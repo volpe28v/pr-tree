@@ -1,0 +1,118 @@
+#!/usr/bin/env ruby
+
+require 'net/https'
+require 'uri'
+require 'json'
+
+def main
+  token = ENV['GITHUB_API_TOKEN']
+  if token.nil?
+    puts 'Please set the environment variable "GITHUB_API_TOKEN"'
+    exit
+  end
+
+  items = github_pull_requests(endpoint, token).map do |item|
+    {
+      number: item['number'],
+      title: item['title'],
+      user: item['user']['login'],
+      base: item['base']['ref'],
+      head: item['head']['ref'],
+      url: item['html_url'],
+      children: [],
+      parent: nil
+    }
+  end
+
+  items.each do |item|
+    parent = items.select { |p| p[:head] == item[:base] }.first
+    if parent
+      parent[:children] << item
+      item[:parent] = parent
+    end
+  end
+
+  parents = items.select { |item| item[:parent] == nil }
+  bases = parents.group_by { |item| item[:base] }.to_a.map { |item| { title: item[0], children: item[1] }}
+
+  show_as_tree(bases)
+end
+
+def endpoint
+  owner , repo = `git config --get remote.origin.url`.split(':')[1].split('.')[0].split('/')
+  "https://api.github.com/repos/#{owner}/#{repo}/pulls"
+end
+
+def github_pull_requests(endpoint, token)
+  uri = URI.parse(endpoint)
+  http = Net::HTTP.new(uri.host, uri.port)
+
+  http.use_ssl = true
+  http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+
+  req = Net::HTTP::Get.new(uri.request_uri)
+  req["Authorization"] = "token #{token}"
+
+  res = http.request(req)
+  # puts res.code, res.msg
+  api_response = JSON.parse(res.body)
+end
+
+def show_as_tree(items, prefix = '')
+  return if items.empty?
+
+  items.each_with_index do |item,i|
+    is_last = items.size - 1 == i
+    print_item(item, is_last, prefix)
+
+    next_prefix = prefix + next_prefix(is_last)
+    show_as_tree(item[:children], next_prefix)
+  end
+end
+
+def print_item(item, is_last, prefix)
+  if item[:number].nil?
+    puts Color.black("#{prefix}#{prefix_head(is_last)}") + Color.r("[#{item[:title].to_s}]")
+  else
+    puts Color.black("#{prefix}#{prefix_head(is_last)}") + Color.g("[#{item[:title].to_s}]") + Color.black("(#{item[:url].to_s})")
+    puts Color.black("#{prefix}#{prefix_body(is_last)}") + Color.b("#{item[:user].to_s}") + " #{item[:head].to_s}"
+    # puts "#{prefix}#{prefix_body(is_last)}#{item[:base].to_s}"
+    # puts "#{prefix}#{prefix_body(is_last)}#{item[:head].to_s}"
+    # puts "#{prefix}#{prefix_body(is_last)}#{item[:url].to_s}"
+  end
+end
+
+def next_prefix(is_last)
+  is_last ? '      ' : ' │    '
+end
+
+def prefix_head(is_last)
+  is_last ?  ' └─' : ' ├─'
+end
+
+def prefix_body(is_last)
+  is_last ? "      " : " │    "
+end
+
+class Color
+  def self.g(t)
+    "\e[32m" + t + Color.end_code
+  end
+  def self.b(t)
+    "\e[34m" + t + Color.end_code
+  end
+  def self.r(t)
+    "\e[31m" + t + Color.end_code
+  end
+  def self.m(t)
+    "\e[35m" + t + Color.end_code
+  end
+  def self.black(t)
+    "\e[30m" + t + Color.end_code
+  end
+  def self.end_code
+    "\e[0m"
+  end
+end
+
+main
