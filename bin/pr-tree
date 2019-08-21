@@ -54,7 +54,9 @@ def github_pull_requests(endpoint, token)
   req["Authorization"] = "token #{token}"
 
   res = http.request(req)
-  # puts res.code, res.msg
+  unless res.code == '200'
+    puts res.code, res.msg
+  end
   api_response = JSON.parse(res.body)
 end
 
@@ -72,10 +74,11 @@ end
 
 def print_item(item, is_last, prefix)
   if item[:number].nil?
-    puts Color.black("#{prefix}#{prefix_head(is_last)}") + Color.r("[#{item[:title].to_s}]")
+    puts Color.black("#{prefix}#{prefix_head(is_last)}") + Color.m("[#{item[:title].to_s}]")
   else
-    puts Color.black("#{prefix}#{prefix_head(is_last)}") + Color.g("[#{item[:title].to_s} ##{item[:number]}]") + Color.black("(#{item[:url].to_s})")
-    puts Color.black("#{prefix}#{prefix_body(is_last)}") + Color.b("#{item[:user].to_s}") + " #{item[:head].to_s}"
+    puts Color.black("#{prefix}#{prefix_head(is_last)}") + Color.m("[#{item[:head].to_s}]")
+    puts Color.black("#{prefix}#{prefix_body(is_last)}") + Color.g("#{item[:title].to_s} ##{item[:number]}")
+    puts Color.black("#{prefix}#{prefix_body(is_last)}") + Color.b(" #{item[:user].to_s}") + Color.black(" #{item[:url].to_s}")
     # puts "#{prefix}#{prefix_body(is_last)}#{item[:base].to_s}"
     # puts "#{prefix}#{prefix_body(is_last)}#{item[:head].to_s}"
     # puts "#{prefix}#{prefix_body(is_last)}#{item[:url].to_s}"
