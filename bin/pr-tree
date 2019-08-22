@@ -4,6 +4,70 @@ require 'net/https'
 require 'uri'
 require 'json'
 
+def main
+  token = ENV['GITHUB_API_TOKEN']
+  if token.nil?
+    puts 'Please set the environment variable "GITHUB_API_TOKEN"'
+    exit
+  end
+
+  unless m = `git config --get remote.origin.url`.match(/git@github.com:(?<owner>.+)\/(?<repo>.+).git/)
+    puts 'Run command in github repository'
+    exit
+  end
+
+  github_client = GitHubClient.new(token, m[:owner], m[:repo])
+  prs = github_client.pull_requests.map do |pr|
+    PrItem.new({
+      number: pr['number'],
+      title: pr['title'],
+      user: pr['user']['login'],
+      base: pr['base']['ref'],
+      head: pr['head']['ref'],
+      url: pr['html_url']
+    })
+  end
+
+  tree_builder = TreeBuilder.new(prs)
+  tree_builder.add_top_item do |key|
+    PrItem.new({ head: key })
+  end
+  tree_builder.show
+end
+
+class GitHubClient
+  def initialize(token, owner, repo)
+    @token = token
+    @owner = owner
+    @repo = repo
+  end
+
+  def pull_requests
+    http = Net::HTTP.new(repo_uri.host, repo_uri.port)
+
+    http.use_ssl = true
+    http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+
+    req = Net::HTTP::Get.new(repo_uri.request_uri)
+    req["Authorization"] = "token #{token}"
+
+    res = http.request(req)
+    unless res.code == '200'
+      puts res.code, res.msg
+    end
+
+    JSON.parse(res.body)
+  end
+
+  private
+
+  attr_accessor :token, :owner, :repo
+
+  def repo_uri
+    @repo_uri ||= URI.parse("https://api.github.com/repos/#{owner}/#{repo}/pulls")
+  end
+end
+
 class PrItem
   attr_accessor :children, :parent
 
@@ -101,53 +165,6 @@ class TreeBuilder
   def prefix_body(is_last)
     is_last ? "      " : " │    "
   end
-end
-
-def main
-  token = ENV['GITHUB_API_TOKEN']
-  if token.nil?
-    puts 'Please set the environment variable "GITHUB_API_TOKEN"'
-    exit
-  end
-
-  items = github_pull_requests(endpoint, token).map do |item|
-    PrItem.new({
-      number: item['number'],
-      title: item['title'],
-      user: item['user']['login'],
-      base: item['base']['ref'],
-      head: item['head']['ref'],
-      url: item['html_url']
-    })
-  end
-
-  tree_builder = TreeBuilder.new(items)
-  tree_builder.add_top_item do |key|
-    PrItem.new({ head: key })
-  end
-  tree_builder.show
-end
-
-def endpoint
-  owner , repo = `git config --get remote.origin.url`.split(':')[1].split('.')[0].split('/')
-  "https://api.github.com/repos/#{owner}/#{repo}/pulls"
-end
-
-def github_pull_requests(endpoint, token)
-  uri = URI.parse(endpoint)
-  http = Net::HTTP.new(uri.host, uri.port)
-
-  http.use_ssl = true
-  http.verify_mode = OpenSSL::SSL::VERIFY_NONE
-
-  req = Net::HTTP::Get.new(uri.request_uri)
-  req["Authorization"] = "token #{token}"
-
-  res = http.request(req)
-  unless res.code == '200'
-    puts res.code, res.msg
-  end
-  api_response = JSON.parse(res.body)
 end
 
 class Color
