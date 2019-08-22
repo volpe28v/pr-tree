@@ -4,6 +4,33 @@ require 'net/https'
 require 'uri'
 require 'json'
 
+class PrItem
+  attr_accessor :number, :title, :user, :base, :head, :url, :children, :parent
+
+  def initialize(params)
+    @number = params[:number]
+    @title = params[:title]
+    @user = params[:user]
+    @base = params[:base]
+    @head = params[:head]
+    @url = params[:url]
+    @children = params[:children] || []
+    @parent = params[:parent]
+  end
+
+  def texts
+    if number.nil?
+      [Color.m("[#{title.to_s}]")]
+    else
+      [
+        Color.m("[#{head.to_s}]"),
+        Color.g("#{title.to_s} ##{number}"),
+        Color.b(" #{user.to_s}") + Color.black(" #{url.to_s}")
+      ]
+    end
+  end
+end
+
 def main
   token = ENV['GITHUB_API_TOKEN']
   if token.nil?
@@ -12,30 +39,28 @@ def main
   end
 
   items = github_pull_requests(endpoint, token).map do |item|
-    {
+    PrItem.new({
       number: item['number'],
       title: item['title'],
       user: item['user']['login'],
       base: item['base']['ref'],
       head: item['head']['ref'],
-      url: item['html_url'],
-      children: [],
-      parent: nil
-    }
+      url: item['html_url']
+    })
   end
 
   items.each do |item|
-    parent = items.select { |p| p[:head] == item[:base] }.first
+    parent = items.select { |p| p.head == item.base }.first
     if parent
-      parent[:children] << item
-      item[:parent] = parent
+      parent.children << item
+      item.parent = parent
     end
   end
 
-  parents = items.select { |item| item[:parent] == nil }
-  bases = parents.group_by { |item| item[:base] }.to_a.map { |item| { title: item[0], children: item[1] }}
+  parents = items.select { |item| item.parent == nil }
+  bases = parents.group_by { |item| item.base }.to_a.map { |item| PrItem.new({ title: item[0], children: item[1] }) }
 
-  show_as_tree(bases)
+  show_as_tree(bases, '')
 end
 
 def endpoint
@@ -60,7 +85,7 @@ def github_pull_requests(endpoint, token)
   api_response = JSON.parse(res.body)
 end
 
-def show_as_tree(items, prefix = '')
+def show_as_tree(items, prefix)
   return if items.empty?
 
   items.each_with_index do |item,i|
@@ -68,22 +93,22 @@ def show_as_tree(items, prefix = '')
     print_item(item, is_last, prefix)
 
     next_prefix = prefix + next_prefix(is_last)
-    show_as_tree(item[:children], next_prefix)
+    show_as_tree(item.children, next_prefix)
   end
 end
 
 def print_item(item, is_last, prefix)
-  if item[:number].nil?
-    puts Color.black("#{prefix}#{prefix_head(is_last)}") + Color.m("[#{item[:title].to_s}]")
-  else
-    puts Color.black("#{prefix}#{prefix_head(is_last)}") + Color.m("[#{item[:head].to_s}]")
-    puts Color.black("#{prefix}#{prefix_body(is_last)}") + Color.g("#{item[:title].to_s} ##{item[:number]}")
-    puts Color.black("#{prefix}#{prefix_body(is_last)}") + Color.b(" #{item[:user].to_s}") + Color.black(" #{item[:url].to_s}")
-    # puts "#{prefix}#{prefix_body(is_last)}#{item[:base].to_s}"
-    # puts "#{prefix}#{prefix_body(is_last)}#{item[:head].to_s}"
-    # puts "#{prefix}#{prefix_body(is_last)}#{item[:url].to_s}"
+  texts = item.texts
+
+  texts.each_with_index do |t, i|
+    if i == 0
+      puts Color.black("#{prefix}#{prefix_head(is_last)}") + t
+    else
+      puts Color.black("#{prefix}#{prefix_body(is_last)}") + t
+    end
   end
 end
+
 
 def next_prefix(is_last)
   is_last ? '      ' : ' │    '
