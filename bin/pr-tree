@@ -43,25 +43,30 @@ class GitHubClient
   end
 
   def pull_requests
-    http = Net::HTTP.new(pulls_uri.host, pulls_uri.port)
-
-    http.use_ssl = true
-    http.verify_mode = OpenSSL::SSL::VERIFY_NONE
-
-    req = Net::HTTP::Get.new(pulls_uri.request_uri)
-    req["Authorization"] = "token #{token}"
-
-    res = http.request(req)
-    unless res.code == '200'
-      puts res.code, res.msg
-    end
-
-    JSON.parse(res.body)
+    get_request(pulls_uri)
   end
 
   private
 
   attr_accessor :token, :owner, :repo
+
+  def get_request(uri)
+    http = Net::HTTP.new(uri.host, uri.port)
+
+    http.use_ssl = true
+    http.verify_mode = OpenSSL::SSL::VERIFY_NONE
+
+    req = Net::HTTP::Get.new(uri.request_uri)
+    req["Authorization"] = "token #{token}"
+
+    res = http.request(req)
+    unless res.code == '200'
+      puts res.code, res.msg
+      return nil
+    end
+
+    JSON.parse(res.body)
+  end
 
   def pulls_uri
     @pulls_uri ||= URI.parse("https://api.github.com/repos/#{owner}/#{repo}/pulls")
