@@ -68,33 +68,19 @@ class GitHubClient
   end
 end
 
-class PrItem
+module TreeBuildable
   attr_accessor :children, :parent
 
-  def initialize(params)
-    @params = params
-    @children = params[:children] || []
-    @parent = params[:parent]
-  end
-
   def parent_key
-    @params[:base]
+    raise NotImplementedError, "You must implement #{self.class}##{__method__}"
   end
 
   def key
-    @params[:head]
+    raise NotImplementedError, "You must implement #{self.class}##{__method__}"
   end
 
   def texts
-    if @params[:number].nil?
-      [Color.m("[#{@params[:head].to_s}]")]
-    else
-      [
-        Color.m("[#{@params[:head].to_s}]"),
-        Color.g("#{@params[:title].to_s} ##{@params[:number]}"),
-        Color.b(" #{@params[:user].to_s}") + Color.black(" #{@params[:url].to_s}")
-      ]
-    end
+    raise NotImplementedError, "You must implement #{self.class}##{__method__}"
   end
 end
 
@@ -185,6 +171,36 @@ class Color
   end
   def self.end_code
     "\e[0m"
+  end
+end
+
+class PrItem
+  include TreeBuildable
+
+  def initialize(params)
+    @params = params
+    @children = params[:children] || []
+    @parent = params[:parent]
+  end
+
+  def parent_key
+    @params[:base]
+  end
+
+  def key
+    @params[:head]
+  end
+
+  def texts
+    if @params[:number].nil?
+      [Color.m("[#{@params[:head].to_s}]")]
+    else
+      [
+        Color.m("[#{@params[:head].to_s}]"),
+        Color.g("#{@params[:title].to_s} ##{@params[:number]}"),
+        Color.b(" #{@params[:user].to_s}") + Color.black(" #{@params[:url].to_s}")
+      ]
+    end
   end
 end
 
