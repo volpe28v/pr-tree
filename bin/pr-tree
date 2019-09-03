@@ -17,12 +17,14 @@ def main
   end
 
   github_client = GitHubClient.new(token, m[:owner], m[:repo])
+  branches = github_client.branches
   prs = github_client.pull_requests.map do |pr|
     PrItem.new({
       number: pr['number'],
       title: pr['title'],
       user: pr['user']['login'],
       base: pr['base']['ref'],
+      is_latest: pr['base']['sha'] == branches.find{|b| b['name'] == pr['base']['ref']}['commit']['sha'],
       head: pr['head']['ref'],
       url: pr['html_url']
     })
@@ -40,6 +42,10 @@ class GitHubClient
     @token = token
     @owner = owner
     @repo = repo
+  end
+
+  def branches
+    get_request(branches_uri)
   end
 
   def pull_requests
@@ -69,7 +75,15 @@ class GitHubClient
   end
 
   def pulls_uri
-    @pulls_uri ||= URI.parse("https://api.github.com/repos/#{owner}/#{repo}/pulls")
+    @pulls_uri ||= URI.parse(base_uri + "/pulls")
+  end
+
+  def branches_uri
+    @branches_uri ||= URI.parse(base_uri + "/branches")
+  end
+
+  def base_uri
+    "https://api.github.com/repos/#{owner}/#{repo}"
   end
 end
 
@@ -200,8 +214,9 @@ class PrItem
     if @params[:number].nil?
       [Color.m("[#{@params[:head].to_s}]")]
     else
+      behind_sym = @params[:is_latest] ? ' ' : Color.r("*")
       [
-        Color.m("[#{@params[:head].to_s}]"),
+        behind_sym + Color.m("[#{@params[:head].to_s}]"),
         Color.g("#{@params[:title].to_s} ##{@params[:number]}"),
         Color.b(" #{@params[:user].to_s}") + Color.black(" #{@params[:url].to_s}")
       ]
