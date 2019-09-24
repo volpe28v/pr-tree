@@ -30,8 +30,6 @@ def main
     })
   end
 
-  # puts prs.map{|p| [p.params[:base], "    #{p.params[:head]}"] }
-
   tree_builder = TreeBuilder.new(prs)
   tree_builder.add_top_item do |key|
     PrItem.new({ head: key })
@@ -92,6 +90,10 @@ end
 module TreeBuildable
   attr_accessor :children, :parent
 
+  def has_key_in_parent_bases(key)
+    raise NotImplementedError, "You must implement #{self.class}##{__method__}"
+  end
+
   def parent_key
     raise NotImplementedError, "You must implement #{self.class}##{__method__}"
   end
@@ -129,7 +131,7 @@ class TreeBuilder
 
   def build_tree
     @items.each do |item|
-      parent = @items.select { |p| p.key == item.parent_key && p.parent_key != item.key }.first
+      parent = @items.select { |p| p.key == item.parent_key && !p.has_key_in_parent_bases(item.key) }.first
       if parent
         parent.children << item
         item.parent = parent
@@ -204,6 +206,16 @@ class PrItem
     @params = params
     @children = params[:children] || []
     @parent = params[:parent]
+  end
+
+  def has_key_in_parent_bases(key)
+    return false if @parent.nil?
+
+    if parent_key == key
+      true
+    else
+      @parent.has_key_in_parent_bases(key)
+    end
   end
 
   def parent_key
