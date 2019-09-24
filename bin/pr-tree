@@ -30,6 +30,8 @@ def main
     })
   end
 
+  # puts prs.map{|p| [p.params[:base], "    #{p.params[:head]}"] }
+
   tree_builder = TreeBuilder.new(prs)
   tree_builder.add_top_item do |key|
     PrItem.new({ head: key })
@@ -127,7 +129,7 @@ class TreeBuilder
 
   def build_tree
     @items.each do |item|
-      parent = @items.select { |p| p.key == item.parent_key}.first
+      parent = @items.select { |p| p.key == item.parent_key && p.parent_key != item.key }.first
       if parent
         parent.children << item
         item.parent = parent
@@ -195,6 +197,8 @@ end
 
 class PrItem
   include TreeBuildable
+
+  attr_accessor :params
 
   def initialize(params)
     @params = params
