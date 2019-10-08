@@ -11,7 +11,7 @@ def main
     exit
   end
 
-  unless m = `git config --get remote.origin.url`.match(/git@github.com:(?<owner>.+)\/(?<repo>.+).git/)
+  unless m = `git config --get remote.origin.url`.match(/git@github.com[:\/](?<owner>.+)\/(?<repo>.+).git/)
     puts 'Run command in github repository'
     exit
   end
