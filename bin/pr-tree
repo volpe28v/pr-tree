@@ -19,12 +19,13 @@ def main
   github_client = GitHubClient.new(token, m[:owner], m[:repo])
   branches = github_client.branches
   prs = github_client.pull_requests.map do |pr|
+    base_branch = branches.find{|b| b['name'] == pr['base']['ref']}
     PrItem.new({
       number: pr['number'],
       title: pr['title'],
       user: pr['user']['login'],
       base: pr['base']['ref'],
-      is_latest: pr['base']['sha'] == branches.find{|b| b['name'] == pr['base']['ref']}['commit']['sha'],
+      is_latest: base_branch.nil? ? true : pr['base']['sha'] == base_branch['commit']['sha'],
       head: pr['head']['ref'],
       url: pr['html_url']
     })
