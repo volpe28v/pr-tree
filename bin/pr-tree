@@ -5,18 +5,18 @@ require 'uri'
 require 'json'
 
 def main
-  token = ENV['GITHUB_API_TOKEN']
-  if token.nil?
+  git_config = GitConfig.new
+  unless git_config.has_token?
     puts 'Please set the environment variable "GITHUB_API_TOKEN"'
     exit
   end
 
-  unless m = `git config --get remote.origin.url`.match(/git@github.com[:\/](?<owner>.+)\/(?<repo>.+).git/)
+  unless git_config.github_repo?
     puts 'Run command in github repository'
     exit
   end
 
-  github_client = GitHubClient.new(token, m[:owner], m[:repo])
+  github_client = GitHubClient.new(git_config)
   branches = github_client.branches
   prs = github_client.pull_requests.map do |pr|
     base_branch = branches.find{|b| b['name'] == pr['base']['ref']}
@@ -38,11 +38,34 @@ def main
   tree_builder.show
 end
 
+class GitConfig
+  attr_reader :token, :owner, :repo
+  def initialize
+    @token = ENV['GITHUB_API_TOKEN']
+    @owner, @repo = get_repo_info
+  end
+
+  def has_token?
+    !token.empty?
+  end
+
+  def github_repo?
+    !(owner.empty? || repo.empty?)
+  end
+
+  private
+
+  def get_repo_info
+    m = `git config --get remote.origin.url`.match(/git@github.com[:\/](?<owner>.+)\/(?<repo>.+).git/)
+    return m[:owner], m[:repo]
+  end
+end
+
 class GitHubClient
-  def initialize(token, owner, repo)
-    @token = token
-    @owner = owner
-    @repo = repo
+  def initialize(config)
+    @token = config.token
+    @owner = config.owner
+    @repo = config.repo
   end
 
   def branches
@@ -76,11 +99,11 @@ class GitHubClient
   end
 
   def pulls_uri
-    @pulls_uri ||= URI.parse(base_uri + "/pulls")
+    URI.parse(base_uri + "/pulls")
   end
 
   def branches_uri
-    @branches_uri ||= URI.parse(base_uri + "/branches")
+    URI.parse(base_uri + "/branches")
   end
 
   def base_uri
