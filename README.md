@@ -17,6 +17,11 @@ Display github pull request on the command line in tree view
 $ pr-tree
 ```
 
+- Filter by user
+```
+$ pr-tree hoge
+```
+
 # Example
 
 ![image](https://user-images.githubusercontent.com/754962/63531828-4f46d180-c544-11e9-8a50-40ffc9a7b038.png)
