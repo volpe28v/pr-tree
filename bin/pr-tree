@@ -5,6 +5,8 @@ require 'uri'
 require 'json'
 
 def main
+  keyword = ARGV[0]
+
   git_config = GitConfig.new
   unless git_config.has_token?
     puts 'Please set the environment variable "GITHUB_API_TOKEN"'
@@ -30,6 +32,8 @@ def main
       url: pr['html_url']
     })
   end
+
+  prs = prs.select {|pr| pr.user_like(keyword) }
 
   tree_builder = TreeBuilder.new(prs)
   tree_builder.add_top_item do |key|
@@ -261,6 +265,12 @@ class PrItem
         Color.b(" #{@params[:user].to_s}") + Color.black(" #{@params[:url].to_s}")
       ]
     end
+  end
+
+  def user_like(keyword)
+    return true if keyword.nil?
+
+    @params[:user].include?(keyword)
   end
 end
 
