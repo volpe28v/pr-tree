@@ -26,6 +26,7 @@ def main
       number: pr['number'],
       title: pr['title'],
       user: pr['user']['login'],
+      reviewers: pr['requested_reviewers'].map{|r| r['login']},
       base: pr['base']['ref'],
       is_latest: base_branch.nil? ? true : pr['base']['sha'] == base_branch['commit']['sha'],
       head: pr['head']['ref'],
@@ -260,7 +261,7 @@ class PrItem
     else
       behind_sym = @params[:is_latest] ? ' ' : Color.r("*")
       [
-        behind_sym + Color.m("[#{@params[:head].to_s}]"),
+        behind_sym + Color.m("[#{@params[:head].to_s}] ") + @params[:reviewers].map {|r| Color.r(r)}.join(' '),
         Color.g("#{@params[:title].to_s} ##{@params[:number]}"),
         Color.b(" #{@params[:user].to_s}") + Color.black(" #{@params[:url].to_s}")
       ]
