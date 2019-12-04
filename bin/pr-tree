@@ -260,8 +260,9 @@ class PrItem
       [Color.m("[#{@params[:head].to_s}]")]
     else
       behind_sym = @params[:is_latest] ? ' ' : Color.r("*")
+      reviewers = @params[:reviewers].length > 0 ? Color.r(" > #{@params[:reviewers].join(' ')}") : ''
       [
-        behind_sym + Color.m("[#{@params[:head].to_s}] ") + @params[:reviewers].map {|r| Color.r(r)}.join(' '),
+        behind_sym + Color.m("[#{@params[:head].to_s}]") + reviewers,
         Color.g("#{@params[:title].to_s} ##{@params[:number]}"),
         Color.b(" #{@params[:user].to_s}") + Color.black(" #{@params[:url].to_s}")
       ]
