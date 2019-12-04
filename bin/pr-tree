@@ -271,8 +271,7 @@ class PrItem
 
   def user_like(keyword)
     return true if keyword.nil?
-
-    @params[:user].include?(keyword)
+    (@params[:reviewers] | [@params[:user]]).any? {|u| u.include?(keyword) }
   end
 end
 
