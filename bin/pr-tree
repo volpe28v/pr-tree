@@ -3,6 +3,7 @@
 require 'net/https'
 require 'uri'
 require 'json'
+require 'concurrent'
 
 def main
   keyword = ARGV[0]
@@ -30,7 +31,8 @@ def main
       base: pr['base']['ref'],
       is_latest: base_branch.nil? ? true : pr['base']['sha'] == base_branch['commit']['sha'],
       head: pr['head']['ref'],
-      url: pr['html_url']
+      url: pr['html_url'],
+      status: pr['status']
     })
   end
 
@@ -78,7 +80,17 @@ class GitHubClient
   end
 
   def pull_requests
-    get_request(pulls_uri)
+    prs = get_request(pulls_uri)
+    requests = prs.map do |pr|
+      Concurrent::Promise.execute do
+        pr['status'] = get_request(URI.parse(base_uri + "/commits/#{pr['head']['sha']}/status"))['state']
+      end
+    end
+
+    Concurrent::Promise
+      .zip(*requests)
+      .value
+    prs
   end
 
   private
@@ -261,9 +273,10 @@ class PrItem
     else
       behind_sym = @params[:is_latest] ? ' ' : Color.r("*")
       reviewers = @params[:reviewers].length > 0 ? Color.r(" > #{@params[:reviewers].join(' ')}") : ''
+      title = "#{@params[:title].to_s} ##{@params[:number]}"
       [
         behind_sym + Color.m("[#{@params[:head].to_s}]") + reviewers,
-        Color.g("#{@params[:title].to_s} ##{@params[:number]}"),
+        status + Color.g(title),
         Color.b(" #{@params[:user].to_s}") + Color.black(" #{@params[:url].to_s}")
       ]
     end
@@ -272,6 +285,17 @@ class PrItem
   def user_like(keyword)
     return true if keyword.nil?
     (@params[:reviewers] | [@params[:user]]).any? {|u| u.include?(keyword) }
+  end
+
+  def status
+    case @params[:status]
+    when 'success' then
+      ''
+    when 'failure' then
+      Color.r('x ')
+    when 'pending' then
+      Color.r('o ')
+    end
   end
 end
 
