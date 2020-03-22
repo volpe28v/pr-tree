@@ -8,6 +8,8 @@ Display github pull request on the command line in tree view
 - Add `GITHUB_API_TOKEN` to .bashrc or .zshrc.
   - `export GITHUB_API_TOKEN=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX`
 
+- Execute `bundle install`
+
 - Put the script in an executable directory
   - ex) `/usr/local/bin/pr-tree`
   - `ln -s /Users/volpe/repo/github.com/volpe28v/pr-tree/bin/pr-tree /usr/local/bin/pr-tree`
