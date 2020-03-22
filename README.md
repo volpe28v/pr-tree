@@ -26,4 +26,4 @@ $ pr-tree hoge
 
 # Example
 
-![image](https://user-images.githubusercontent.com/754962/63531828-4f46d180-c544-11e9-8a50-40ffc9a7b038.png)
+![image](https://user-images.githubusercontent.com/754962/77252414-0cdea200-6c97-11ea-9ead-894bd9164ac9.png)
