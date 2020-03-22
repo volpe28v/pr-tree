@@ -20,8 +20,12 @@ def main
   end
 
   github_client = GitHubClient.new(git_config)
-  branches = github_client.branches
-  prs = github_client.pull_requests.map do |pr|
+  branches, pulls = *Concurrent::Promise.zip(
+    Concurrent::Promise.execute { github_client.branches },
+    Concurrent::Promise.execute { github_client.pull_requests }
+  ).value
+
+  prs = pulls.map do |pr|
     base_branch = branches.find{|b| b['name'] == pr['base']['ref']}
     PrItem.new({
       number: pr['number'],
@@ -39,9 +43,7 @@ def main
   prs = prs.select {|pr| pr.user_like(keyword) }
 
   tree_builder = TreeBuilder.new(prs)
-  tree_builder.add_top_item do |key|
-    PrItem.new({ head: key })
-  end
+  tree_builder.add_top_item {|key| PrItem.new({ head: key }) }
   tree_builder.show
 end
 
@@ -80,17 +82,14 @@ class GitHubClient
   end
 
   def pull_requests
-    prs = get_request(pulls_uri)
-    requests = prs.map do |pr|
-      Concurrent::Promise.execute do
-        pr['status'] = get_request(URI.parse(base_uri + "/commits/#{pr['head']['sha']}/status"))['state']
+    Concurrent::Promise.zip(
+      *get_request(pulls_uri).map do |pr|
+        Concurrent::Promise.execute do
+          pr['status'] = get_request(status_uri(pr['head']['sha']))['state']
+          pr
+        end
       end
-    end
-
-    Concurrent::Promise
-      .zip(*requests)
-      .value
-    prs
+    ).value
   end
 
   private
@@ -121,6 +120,10 @@ class GitHubClient
 
   def branches_uri
     URI.parse(base_uri + "/branches")
+  end
+
+  def status_uri(sha)
+    URI.parse(base_uri + "/commits/#{sha}/status")
   end
 
   def base_uri
@@ -286,6 +289,8 @@ class PrItem
     return true if keyword.nil?
     (@params[:reviewers] | [@params[:user]]).any? {|u| u.include?(keyword) }
   end
+
+  private
 
   def status
     case @params[:status]
