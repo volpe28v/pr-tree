@@ -4,18 +4,22 @@ require 'net/https'
 require 'uri'
 require 'json'
 require 'concurrent'
+require 'optparse'
 
 def main
-  keyword = ARGV[0]
+  opt = OptionParser.new
+  opt.on('-f', '--filter KEYWORD', 'filter by keyword') { |v| @keyword  = v }
+  opt.on('-u', '--url GIT_URL', 'specific git url') { |v| @url = v }
+  opt.parse(ARGV)
 
-  git_config = GitConfig.new
+  git_config = GitConfig.new(@url)
   unless git_config.has_token?
     puts 'Please set the environment variable "GITHUB_API_TOKEN"'
     exit
   end
 
   unless git_config.github_repo?
-    puts 'Run command in github repository'
+    puts 'Run command in github repository or spcify git url with "-u" option.'
     exit
   end
 
@@ -40,7 +44,7 @@ def main
     })
   end
 
-  prs = prs.select {|pr| pr.user_like(keyword) }
+  prs = prs.select {|pr| pr.user_like(@keyword) }
 
   tree_builder = TreeBuilder.new(prs)
   tree_builder.add_top_item {|key| PrItem.new({ head: key }) }
@@ -49,9 +53,10 @@ end
 
 class GitConfig
   attr_reader :token, :owner, :repo
-  def initialize
+
+  def initialize(url)
     @token = ENV['GITHUB_API_TOKEN']
-    @owner, @repo = get_repo_info
+    @owner, @repo = get_repo_info(url)
   end
 
   def has_token?
@@ -64,8 +69,10 @@ class GitConfig
 
   private
 
-  def get_repo_info
-    m = `git config --get remote.origin.url`.match(/git@github.com[:\/](?<owner>.+)\/(?<repo>.+).git/)
+  def get_repo_info(url)
+    url = `git config --get remote.origin.url` if url.nil?
+
+    m = url.match(/git@github.com[:\/](?<owner>.+)\/(?<repo>.+).git/)
     return m[:owner], m[:repo]
   end
 end
