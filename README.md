@@ -21,7 +21,17 @@ $ pr-tree
 
 - Filter by user
 ```
-$ pr-tree hoge
+$ pr-tree -f hoge
+```
+
+- Filter by reviewer
+```
+$ pr-tree -r hoge
+```
+
+- Specify github url
+```
+$ pr-tree -u ssh://git@github.com/hoge/fuga.git
 ```
 
 # Example
