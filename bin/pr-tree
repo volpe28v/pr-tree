@@ -9,6 +9,7 @@ require 'optparse'
 def main
   opt = OptionParser.new
   opt.on('-f', '--filter KEYWORD', 'filter by keyword') { |v| @keyword  = v }
+  opt.on('-r', '--reviewer REVIEWER', 'filter by reviewer') { |v| @reviewer = v }
   opt.on('-u', '--url GIT_URL', 'specific git url') { |v| @url = v }
   opt.parse(ARGV)
 
@@ -22,6 +23,8 @@ def main
     puts 'Run command in github repository or spcify git url with "-u" option.'
     exit
   end
+
+  puts git_config.repo
 
   github_client = GitHubClient.new(git_config)
   branches, pulls = *Concurrent::Promise.zip(
@@ -45,6 +48,8 @@ def main
   end
 
   prs = prs.select {|pr| pr.user_like(@keyword) }
+  prs = prs.select {|pr| pr.reviewer_like(@reviewer) }
+
 
   tree_builder = TreeBuilder.new(prs)
   tree_builder.add_top_item {|key| PrItem.new({ head: key }) }
@@ -295,6 +300,11 @@ class PrItem
   def user_like(keyword)
     return true if keyword.nil?
     (@params[:reviewers] | [@params[:user]]).any? {|u| u.include?(keyword) }
+  end
+
+  def reviewer_like(keyword)
+    return true if keyword.nil?
+    @params[:reviewers].any? {|u| u.include?(keyword) }
   end
 
   private
