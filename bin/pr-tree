@@ -43,7 +43,8 @@ def main
       is_latest: base_branch.nil? ? true : pr['base']['sha'] == base_branch['commit']['sha'],
       head: pr['head']['ref'],
       url: pr['html_url'],
-      status: pr['status']
+      status: pr['status'],
+      current_branch: pr['head']['ref'] == git_config.branch
     })
   end
 
@@ -52,16 +53,20 @@ def main
 
 
   tree_builder = TreeBuilder.new(prs)
-  tree_builder.add_top_item {|key| PrItem.new({ head: key }) }
+  tree_builder.add_top_item {|key| PrItem.new({
+    head: key,
+    current_branch: key == git_config.branch
+  }) }
   tree_builder.show
 end
 
 class GitConfig
-  attr_reader :token, :owner, :repo
+  attr_reader :token, :owner, :repo, :branch
 
   def initialize(url)
     @token = ENV['GITHUB_API_TOKEN']
     @owner, @repo = get_repo_info(url)
+    @branch = get_current_branch(url)
   end
 
   def has_token?
@@ -80,6 +85,11 @@ class GitConfig
     m = url.match(/git@github.com[:\/](?<owner>.+)\/(?<repo>.+).git/)
     return m[:owner], m[:repo]
   end
+
+  def get_current_branch(url)
+    `git branch --contains`.split("\n").find{|l| l[0] == '*'}.split(' ').last
+  end
+
 end
 
 class GitHubClient
@@ -245,6 +255,9 @@ class Color
   def self.m(t)
     "\e[35m" + t + Color.end_code
   end
+  def self.w(t)
+    "\e[37m" + t + Color.end_code
+  end
   def self.black(t)
     "\e[30m" + t + Color.end_code
   end
@@ -284,13 +297,13 @@ class PrItem
 
   def texts
     if @params[:number].nil?
-      [Color.m("[#{@params[:head].to_s}]")]
+      [branch_name(@params[:head].to_s)]
     else
       behind_sym = @params[:is_latest] ? ' ' : Color.r("*")
       reviewers = @params[:reviewers].length > 0 ? Color.r(" > #{@params[:reviewers].join(' ')}") : ''
       title = "#{@params[:title].to_s} ##{@params[:number]}"
       [
-        behind_sym + Color.m("[#{@params[:head].to_s}]") + reviewers,
+        behind_sym + branch_name(@params[:head].to_s) + reviewers,
         status + Color.g(title),
         Color.b(" #{@params[:user].to_s}") + Color.black(" #{@params[:url].to_s}")
       ]
@@ -317,6 +330,14 @@ class PrItem
       Color.r('x ')
     when 'pending' then
       Color.r('o ')
+    end
+  end
+
+  def branch_name(name)
+    if @params[:current_branch]
+      Color.w("->[#{name}]")
+    else
+      Color.m("[#{name}]")
     end
   end
 end
