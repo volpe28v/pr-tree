@@ -261,6 +261,9 @@ class Color
   def self.black(t)
     "\e[30m" + t + Color.end_code
   end
+  def self.bold(t)
+    "\e[36m\e[1m" + t + Color.end_code
+  end
   def self.end_code
     "\e[0m"
   end
@@ -335,7 +338,7 @@ class PrItem
 
   def branch_name(name)
     if @params[:current_branch]
-      Color.w("->[#{name}]")
+      Color.bold("[#{name}]")
     else
       Color.m("[#{name}]")
     end
