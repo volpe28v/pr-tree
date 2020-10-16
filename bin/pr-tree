@@ -87,7 +87,7 @@ class GitConfig
   end
 
   def get_current_branch(url)
-    `git branch --contains`.split("\n").find{|l| l[0] == '*'}.split(' ').last
+    `git symbolic-ref --short HEAD`.chomp
   end
 
 end
@@ -262,7 +262,7 @@ class Color
     "\e[30m" + t + Color.end_code
   end
   def self.bold(t)
-    "\e[36m\e[1m" + t + Color.end_code
+    "\e[33m\e[1m" + t + Color.end_code
   end
   def self.end_code
     "\e[0m"
