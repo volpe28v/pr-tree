@@ -11,6 +11,7 @@ def main
   opt.on('-f', '--filter KEYWORD', 'filter by keyword') { |v| @keyword  = v }
   opt.on('-r', '--reviewer REVIEWER', 'filter by reviewer') { |v| @reviewer = v }
   opt.on('-u', '--url GIT_URL', 'specific git url') { |v| @url = v }
+  opt.on('-m', '--markdown', 'show as markdown') { |v| @markdown = true }
   opt.parse(ARGV)
 
   git_config = GitConfig.new(@url)
@@ -52,12 +53,18 @@ def main
   prs = prs.select {|pr| pr.reviewer_like(@reviewer) }
 
 
-  tree_builder = TreeBuilder.new(prs)
-  tree_builder.add_top_item {|key| PrItem.new({
-    head: key,
-    current_branch: key == git_config.branch
-  }) }
-  tree_builder.show
+  builder = nil
+  if @markdown
+    builder= MarkdownBuilder.new(prs)
+  else
+    builder = TreeBuilder.new(prs)
+    builder.add_top_item {|key| PrItem.new({
+      head: key,
+      current_branch: key == git_config.branch
+    }) }
+  end
+
+  builder.show
 end
 
 class GitConfig
@@ -239,6 +246,44 @@ class TreeBuilder
 
   def prefix_body(is_last)
     is_last ? "      " : " │    "
+  end
+end
+
+class MarkdownBuilder
+  def initialize(items)
+    @items = items
+  end
+
+  def show
+    show_as_markdown
+  end
+
+  private
+
+  def show_as_markdown
+    @items.each do |item|
+      print_item(item)
+    end
+  end
+
+  def print_item(item)
+    texts = item.texts
+
+    texts.each_with_index do |t, i|
+      if i == 0
+        puts Color.black("#{prefix_head}") + t
+      else
+        puts Color.black("#{prefix_body}") + t
+      end
+    end
+  end
+
+  def prefix_head
+    '- [ ] '
+  end
+
+  def prefix_body
+    '    - '
   end
 end
 
