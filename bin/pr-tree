@@ -28,41 +28,21 @@ def main
   puts git_config.repo
 
   github_client = GitHubClient.new(git_config)
-  branches, pulls = *Concurrent::Promise.zip(
-    Concurrent::Promise.execute { github_client.branches },
-    Concurrent::Promise.execute { github_client.pull_requests }
-  ).value
 
-  prs = pulls.map do |pr|
-    base_branch = branches.find{|b| b['name'] == pr['base']['ref']}
-    PrItem.new({
-      number: pr['number'],
-      title: pr['title'],
-      user: pr['user']['login'],
-      reviewers: pr['requested_reviewers'].map{|r| r['login']},
-      base: pr['base']['ref'],
-      is_latest: base_branch.nil? ? true : pr['base']['sha'] == base_branch['commit']['sha'],
-      head: pr['head']['ref'],
-      url: pr['html_url'],
-      status: pr['status'],
-      current_branch: pr['head']['ref'] == git_config.branch
-    })
-  end
+  pr_builder = PrBuilder.new(github_client, git_config.branch)
+    .filter_keyword!(@keyword)
+    .filter_reviewer!(@reviewer)
 
-  prs = prs.select {|pr| pr.user_like(@keyword) }
-  prs = prs.select {|pr| pr.reviewer_like(@reviewer) }
-
-
-  builder = nil
-  if @markdown
-    builder= MarkdownBuilder.new(prs)
-  else
-    builder = TreeBuilder.new(prs)
-    builder.add_top_item {|key| PrItem.new({
-      head: key,
-      current_branch: key == git_config.branch
-    }) }
-  end
+  builder = if @markdown
+              MarkdownBuilder.new(pr_builder.prs)
+            else
+              builder = TreeBuilder.new(pr_builder.prs)
+              builder.add_top_item {|key| PrItem.new({
+                head: key,
+                current_branch: key == git_config.branch
+              }) }
+              builder
+            end
 
   builder.show
 end
@@ -157,6 +137,43 @@ class GitHubClient
 
   def base_uri
     "https://api.github.com/repos/#{owner}/#{repo}"
+  end
+end
+
+class PrBuilder
+  attr_reader :prs
+
+  def initialize(github_client, current_branch)
+    branches, pulls = *Concurrent::Promise.zip(
+      Concurrent::Promise.execute { github_client.branches },
+      Concurrent::Promise.execute { github_client.pull_requests }
+    ).value
+
+    @prs = pulls.map do |pr|
+      base_branch = branches.find{|b| b['name'] == pr['base']['ref']}
+      PrItem.new({
+        number: pr['number'],
+        title: pr['title'],
+        user: pr['user']['login'],
+        reviewers: pr['requested_reviewers'].map{|r| r['login']},
+        base: pr['base']['ref'],
+        is_latest: base_branch.nil? ? true : pr['base']['sha'] == base_branch['commit']['sha'],
+        head: pr['head']['ref'],
+        url: pr['html_url'],
+        status: pr['status'],
+        current_branch: pr['head']['ref'] == current_branch
+      })
+    end
+  end
+
+  def filter_keyword!(keyword)
+    @prs = @prs.select {|pr| pr.user_like(keyword) }
+    self
+  end
+
+  def filter_reviewer!(reviewer)
+    @prs = @prs.select {|pr| pr.reviewer_like(reviewer) }
+    self
   end
 end
 
