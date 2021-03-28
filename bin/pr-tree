@@ -12,6 +12,7 @@ def main
   opt.on('-r', '--reviewer REVIEWER', 'filter by reviewer') { |v| @reviewer = v }
   opt.on('-u', '--url GIT_URL', 'specific git url') { |v| @url = v }
   opt.on('-m', '--markdown', 'show as markdown') { |v| @markdown = true }
+  opt.on('-s', '--status USER', 'show as markdown with user status') { |v| @status = v }
   opt.parse(ARGV)
 
   git_config = GitConfig.new(@url)
@@ -31,17 +32,19 @@ def main
 
   pr_builder = PrBuilder.new(github_client, git_config.branch)
     .filter_keyword!(@keyword)
+    .filter_keyword!(@status)
     .filter_reviewer!(@reviewer)
 
   builder = if @markdown
               MarkdownBuilder.new(pr_builder.prs)
+            elsif @status
+              StatusBuilder.new(pr_builder.prs, @status)
             else
-              builder = TreeBuilder.new(pr_builder.prs)
-              builder.add_top_item {|key| PrItem.new({
+              TreeBuilder.new(pr_builder.prs)
+                .add_top_item {|key| PrItem.new({
                 head: key,
                 current_branch: key == git_config.branch
               }) }
-              builder
             end
 
   builder.show
@@ -167,12 +170,12 @@ class PrBuilder
   end
 
   def filter_keyword!(keyword)
-    @prs = @prs.select {|pr| pr.user_like(keyword) }
+    @prs = @prs.select {|pr| pr.user_like?(keyword) }
     self
   end
 
   def filter_reviewer!(reviewer)
-    @prs = @prs.select {|pr| pr.reviewer_like(reviewer) }
+    @prs = @prs.select {|pr| pr.reviewer_like?(reviewer) }
     self
   end
 end
@@ -211,6 +214,7 @@ class TreeBuilder
       top_item.children = item[1]
       top_item
     end
+    self
   end
 
   def show
@@ -304,6 +308,32 @@ class MarkdownBuilder
   end
 end
 
+class StatusBuilder < MarkdownBuilder
+  def initialize(items, user)
+    super(items)
+    @user = user
+  end
+
+  private
+
+  def show_as_markdown
+    puts Color.black('#### Assigned for review')
+    @items.select{ |pr| pr.reviewer_like?(@user)}.each do |item|
+      print_item(item)
+    end
+
+    puts Color.black('#### Requested for review')
+    @items.select{ |pr| pr.requested_review?(@user)}.each do |item|
+      print_item(item)
+    end
+
+    puts Color.black('#### Work in progress')
+    @items.select{ |pr| pr.user_wip?(@user)}.each do |item|
+      print_item(item)
+    end
+  end
+end
+
 class Color
   def self.g(t)
     "\e[32m" + t + Color.end_code
@@ -375,12 +405,22 @@ class PrItem
     end
   end
 
-  def user_like(keyword)
+  def user_like?(keyword)
     return true if keyword.nil?
     (@params[:reviewers] | [@params[:user]]).any? {|u| u.include?(keyword) }
   end
 
-  def reviewer_like(keyword)
+  def user_wip?(keyword)
+    return true if keyword.nil?
+    @params[:user].include?(keyword) && @params[:reviewers].empty?
+  end
+
+  def requested_review?(keyword)
+    return true if keyword.nil?
+    @params[:user].include?(keyword) && @params[:reviewers].any?
+  end
+
+  def reviewer_like?(keyword)
     return true if keyword.nil?
     @params[:reviewers].any? {|u| u.include?(keyword) }
   end
