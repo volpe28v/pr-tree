@@ -317,6 +317,8 @@ class StatusBuilder < MarkdownBuilder
   private
 
   def show_as_markdown
+    return if @items.empty?
+
     puts Color.black('#### Assigned for review')
     @items.select{ |pr| pr.reviewer_like?(@user)}.each do |item|
       print_item(item)
