@@ -34,6 +34,16 @@ $ pr-tree -r hoge
 $ pr-tree -u ssh://git@github.com/hoge/fuga.git
 ```
 
+- Show as markdown
+```
+$ pr-tree -m
+```
+
+- Show changed files
+```
+$ pr-tree -f
+```
+
 # Example
 
 ![image](https://user-images.githubusercontent.com/754962/77252414-0cdea200-6c97-11ea-9ead-894bd9164ac9.png)
