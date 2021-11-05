@@ -21,7 +21,7 @@ $ pr-tree
 
 - Filter by user
 ```
-$ pr-tree -f hoge
+$ pr-tree -k hoge
 ```
 
 - Filter by reviewer

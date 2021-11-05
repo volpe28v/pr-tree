@@ -8,7 +8,7 @@ require 'optparse'
 
 def main
   opt = OptionParser.new
-  opt.on('-f', '--filter KEYWORD', 'filter by keyword') { |v| @keyword  = v }
+  opt.on('-k', '--keyword KEYWORD', 'filter by keyword') { |v| @keyword  = v }
   opt.on('-r', '--reviewer REVIEWER', 'filter by reviewer') { |v| @reviewer = v }
   opt.on('-u', '--url GIT_URL', 'specific git url') { |v| @url = v }
   opt.on('-m', '--markdown', 'show as markdown') { |v| @markdown = true }
