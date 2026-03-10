@@ -14,6 +14,8 @@ def main
   opt.on('-m', '--markdown', 'show as markdown') { |v| @markdown = true }
   opt.on('-s', '--status USER', 'show as markdown with user status') { |v| @status = v }
   opt.on('-f', '--files', 'show changed files') { |v| @files = true }
+  opt.on('-c', '--ci-pass', 'show only CI passed PRs') { |v| @ci_pass = true }
+  opt.on('-n', '--no-approved', 'hide approved PRs') { |v| @no_approved = true }
   opt.parse(ARGV)
 
   git_config = GitConfig.new(@url)
@@ -35,6 +37,8 @@ def main
     .filter_keyword!(@keyword)
     .filter_keyword!(@status)
     .filter_reviewer!(@reviewer)
+    .filter_ci_pass!(@ci_pass)
+    .filter_no_approved!(@no_approved)
 
   builder = if @markdown
               MarkdownBuilder.new(pr_builder.prs)
@@ -98,8 +102,9 @@ class GitHubClient
     Concurrent::Promise.zip(
       *get_request(pulls_uri).map do |pr|
         Concurrent::Promise.execute do
-          pr['status'] = get_request(status_uri(pr['head']['sha']))['state']
+          pr['status'] = combined_status(pr['head']['sha'])
           pr['files'] = get_request(files_uri(pr['number']))
+          pr['reviews'] = get_request(reviews_uri(pr['number']))
           pr
         end
       end
@@ -144,6 +149,29 @@ class GitHubClient
     URI.parse(base_uri + "/pulls/#{pull_number}/files")
   end
 
+  def reviews_uri(pull_number)
+    URI.parse(base_uri + "/pulls/#{pull_number}/reviews")
+  end
+
+  def check_runs_uri(sha)
+    URI.parse(base_uri + "/commits/#{sha}/check-runs")
+  end
+
+  def combined_status(sha)
+    status_state = get_request(status_uri(sha))['state']
+    check_runs = get_request(check_runs_uri(sha))['check_runs'] || []
+    has_check_failure = check_runs.any? { |cr| cr['conclusion'] == 'failure' }
+    has_check_pending = check_runs.any? { |cr| cr['status'] != 'completed' }
+
+    if status_state == 'failure' || has_check_failure
+      'failure'
+    elsif status_state == 'pending' || has_check_pending
+      'pending'
+    else
+      'success'
+    end
+  end
+
   def base_uri
     "https://api.github.com/repos/#{owner}/#{repo}"
   end
@@ -170,6 +198,7 @@ class PrBuilder
         head: pr['head']['ref'],
         url: pr['html_url'],
         status: pr['status'],
+        approved: pr['reviews'].any?{|r| r['state'] == 'APPROVED'},
         files: pr['files'].map{|f| { status: f['status'], name: f['filename']} },
         current_branch: pr['head']['ref'] == current_branch,
         show_files: show_files
@@ -184,6 +213,18 @@ class PrBuilder
 
   def filter_reviewer!(reviewer)
     @prs = @prs.select {|pr| pr.reviewer_like?(reviewer) }
+    self
+  end
+
+  def filter_ci_pass!(enabled)
+    return self unless enabled
+    @prs = @prs.select {|pr| pr.ci_passed? }
+    self
+  end
+
+  def filter_no_approved!(enabled)
+    return self unless enabled
+    @prs = @prs.reject {|pr| pr.approved? }
     self
   end
 end
@@ -263,6 +304,7 @@ class TreeBuilder
         puts Color.black("#{prefix}#{prefix_body(is_last)}") + t
       end
     end
+    puts
   end
 
   def next_prefix(is_last)
@@ -305,6 +347,7 @@ class MarkdownBuilder
         puts Color.black("#{prefix_body}") + t
       end
     end
+    puts
   end
 
   def prefix_head
@@ -405,14 +448,12 @@ class PrItem
     if @params[:number].nil?
       [branch_name(@params[:head].to_s)]
     else
-      behind_sym = @params[:is_latest] ? ' ' : Color.r("*")
-      reviewers = @params[:reviewers].length > 0 ? Color.r(" > #{@params[:reviewers].join(' ')}") : ''
       title = "#{@params[:title].to_s} ##{@params[:number]}"
+      reviewer_text = reviewer_summary.empty? ? '' : "  #{reviewer_summary}"
       [
-        behind_sym + branch_name(@params[:head].to_s) + reviewers,
-        status + Color.g(title),
-        Color.b(" #{@params[:user].to_s}") + Color.black(" #{@params[:url].to_s}"),
-        *files
+        " #{status} #{approve_badge} #{behind_badge}  #{branch_name(@params[:head].to_s)}",
+        "           #{Color.g(title)}",
+        "           #{Color.b('@' + @params[:user].to_s)}#{reviewer_text}  #{Color.black(@params[:url].to_s)}",
       ]
     end
   end
@@ -437,17 +478,42 @@ class PrItem
     @params[:reviewers].any? {|u| u.include?(keyword) }
   end
 
+  def ci_passed?
+    @params[:status] == 'success'
+  end
+
+  def approved?
+    @params[:approved]
+  end
+
   private
 
   def status
     case @params[:status]
     when 'success' then
-      ''
+      '🟢'
     when 'failure' then
-      Color.r('x ')
+      '🔴'
     when 'pending' then
-      Color.r('o ')
+      '🟡'
     end
+  end
+
+  def approve_badge
+    @params[:approved] ? '✅' : '⬜'
+  end
+
+  def behind_badge
+    @params[:is_latest] ? '🔼' : '🔽'
+  end
+
+  def reviewer_summary
+    reviewers = @params[:reviewers] || []
+    return '' if reviewers.empty?
+
+    first = reviewers.first
+    rest = reviewers.length - 1
+    rest > 0 ? "👀 #{first} +#{rest}" : "👀 #{first}"
   end
 
   def branch_name(name)
