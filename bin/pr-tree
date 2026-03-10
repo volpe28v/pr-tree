@@ -158,14 +158,24 @@ class GitHubClient
   end
 
   def combined_status(sha)
-    status_state = get_request(status_uri(sha))['state']
-    check_runs = get_request(check_runs_uri(sha))['check_runs'] || []
-    has_check_failure = check_runs.any? { |cr| cr['conclusion'] == 'failure' }
-    has_check_pending = check_runs.any? { |cr| cr['status'] != 'completed' }
+    status_response = get_request(status_uri(sha))
+    status_state = status_response['state']
+    has_statuses = status_response['total_count'].to_i > 0
 
-    if status_state == 'failure' || has_check_failure
+    check_runs = get_request(check_runs_uri(sha))['check_runs'] || []
+
+    # 同名check runは最新の結果のみ使う
+    latest_runs = check_runs
+      .sort_by { |cr| cr['completed_at'] || '' }
+      .reverse
+      .uniq { |cr| cr['name'] }
+
+    has_check_failure = latest_runs.any? { |cr| cr['conclusion'] == 'failure' }
+    has_check_pending = latest_runs.any? { |cr| cr['status'] != 'completed' }
+
+    if (has_statuses && status_state == 'failure') || has_check_failure
       'failure'
-    elsif status_state == 'pending' || has_check_pending
+    elsif (has_statuses && status_state == 'pending') || has_check_pending
       'pending'
     else
       'success'
@@ -218,7 +228,7 @@ class PrBuilder
 
   def filter_ci_pass!(enabled)
     return self unless enabled
-    @prs = @prs.select {|pr| pr.ci_passed? }
+    @prs = @prs.reject {|pr| pr.ci_failed? }
     self
   end
 
@@ -480,6 +490,10 @@ class PrItem
 
   def ci_passed?
     @params[:status] == 'success'
+  end
+
+  def ci_failed?
+    @params[:status] == 'failure'
   end
 
   def approved?
