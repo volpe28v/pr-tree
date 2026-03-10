@@ -105,6 +105,7 @@ class GitHubClient
           pr['status'] = combined_status(pr['head']['sha'])
           pr['files'] = get_request(files_uri(pr['number']))
           pr['reviews'] = get_request(reviews_uri(pr['number']))
+          pr['mergeable'] = get_request(pull_uri(pr['number']))['mergeable']
           pr
         end
       end
@@ -153,6 +154,10 @@ class GitHubClient
     URI.parse(base_uri + "/pulls/#{pull_number}/reviews")
   end
 
+  def pull_uri(pull_number)
+    URI.parse(base_uri + "/pulls/#{pull_number}")
+  end
+
   def check_runs_uri(sha)
     URI.parse(base_uri + "/commits/#{sha}/check-runs")
   end
@@ -191,20 +196,16 @@ class PrBuilder
   attr_reader :prs
 
   def initialize(github_client, current_branch, show_files)
-    branches, pulls = *Concurrent::Promise.zip(
-      Concurrent::Promise.execute { github_client.branches },
-      Concurrent::Promise.execute { github_client.pull_requests }
-    ).value
+    pulls = github_client.pull_requests
 
     @prs = pulls.map do |pr|
-      base_branch = branches.find{|b| b['name'] == pr['base']['ref']}
       PrItem.new({
         number: pr['number'],
         title: pr['title'],
         user: pr['user']['login'],
         reviewers: pr['requested_reviewers'].map{|r| r['login']},
         base: pr['base']['ref'],
-        is_latest: base_branch.nil? ? true : pr['base']['sha'] == base_branch['commit']['sha'],
+        mergeable: pr['mergeable'],
         head: pr['head']['ref'],
         url: pr['html_url'],
         status: pr['status'],
@@ -461,7 +462,7 @@ class PrItem
       title = "#{@params[:title].to_s} ##{@params[:number]}"
       reviewer_text = reviewer_summary.empty? ? '' : "  #{reviewer_summary}"
       [
-        " #{status} #{approve_badge} #{behind_badge}  #{branch_name(@params[:head].to_s)}",
+        " #{status} #{approve_badge} #{conflict_badge}  #{branch_name(@params[:head].to_s)}",
         "           #{Color.g(title)}",
         "           #{Color.b('@' + @params[:user].to_s)}#{reviewer_text}  #{Color.black(@params[:url].to_s)}",
       ]
@@ -517,8 +518,8 @@ class PrItem
     @params[:approved] ? '✅' : '⬜'
   end
 
-  def behind_badge
-    @params[:is_latest] ? '🔼' : '🔽'
+  def conflict_badge
+    @params[:mergeable] == false ? '💥' : '  '
   end
 
   def reviewer_summary
