@@ -10,6 +10,10 @@
   <div id="header">
     <div id="repo-name"></div>
     <div id="controls">
+      <div id="view-toggle">
+        <button id="view-card-btn" class="view-btn active" title="Card view">☰</button>
+        <button id="view-tree-btn" class="view-btn" title="Tree view">🌳</button>
+      </div>
       <button id="refresh-btn" title="Refresh">↻</button>
       <button id="settings-btn" title="Settings">⚙</button>
     </div>
@@ -40,6 +44,13 @@
     <span id="rate-limit"></span>
   </div>
   <div id="tree-container"></div>
+  <div id="tree-detail-panel" class="hidden">
+    <div id="tree-detail-header">
+      <span id="tree-detail-title"></span>
+      <button id="tree-detail-close">✕</button>
+    </div>
+    <div id="tree-detail-content"></div>
+  </div>
   <script src="../renderer-bundle.js"></script>
 </body>
 </html>

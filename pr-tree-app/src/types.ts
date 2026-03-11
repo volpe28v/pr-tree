@@ -8,6 +8,7 @@ export interface PrParams {
   url?: string;
   status?: 'success' | 'failure' | 'pending';
   approved?: boolean;
+  approvers?: string[];
   mergeable?: boolean | null;
   files?: FileChange[];
   currentBranch?: boolean;
@@ -31,6 +32,7 @@ export interface GitHubPr {
 
 export interface GitHubReview {
   state: string;
+  user: { login: string };
 }
 
 export interface GitHubFile {

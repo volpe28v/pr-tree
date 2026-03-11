@@ -1,14 +1,21 @@
 import { GitHubClient } from '../github-client';
-import { buildPrNodes, filterKeyword, filterCiPass, filterNoApproved } from '../pr-builder';
+import { buildPrNodes, filterKeyword, filterCiPass, filterNoApproved, PrNode } from '../pr-builder';
 import { buildTree } from '../tree-builder';
-import { renderTree } from './tree-view';
+import { renderTree, renderGrouped, renderSubTree, findTreeRoot, extractRelatedSubtree } from './tree-view';
 import { AppConfig } from '../types';
 
 const CONFIG_KEY = 'pr-tree-config';
+const VIEW_MODE_KEY = 'pr-tree-view-mode';
+
+type ViewMode = 'card' | 'tree';
 
 let pollingTimer: ReturnType<typeof setInterval> | null = null;
 let client: GitHubClient | null = null;
 let currentConfig: AppConfig | null = null;
+let currentTree: PrNode[] = [];
+let currentNodes: PrNode[] = [];
+let viewMode: ViewMode = 'card';
+let selectedTreePrNumber: number | null = null;
 
 function loadConfig(): AppConfig | null {
   const raw = localStorage.getItem(CONFIG_KEY);
@@ -22,6 +29,14 @@ function loadConfig(): AppConfig | null {
 
 function saveConfig(config: AppConfig): void {
   localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+}
+
+function loadViewMode(): ViewMode {
+  return (localStorage.getItem(VIEW_MODE_KEY) as ViewMode) || 'card';
+}
+
+function saveViewMode(mode: ViewMode): void {
+  localStorage.setItem(VIEW_MODE_KEY, mode);
 }
 
 function getElements() {
@@ -38,7 +53,74 @@ function getElements() {
     lastUpdated: document.getElementById('last-updated')!,
     rateLimit: document.getElementById('rate-limit')!,
     treeContainer: document.getElementById('tree-container')!,
+    viewCardBtn: document.getElementById('view-card-btn')!,
+    viewTreeBtn: document.getElementById('view-tree-btn')!,
+    treeDetailPanel: document.getElementById('tree-detail-panel')!,
+    treeDetailTitle: document.getElementById('tree-detail-title')!,
+    treeDetailContent: document.getElementById('tree-detail-content')!,
+    treeDetailClose: document.getElementById('tree-detail-close')!,
   };
+}
+
+function renderCurrentView(els: ReturnType<typeof getElements>): void {
+  if (currentTree.length === 0 && currentNodes.length === 0) return;
+
+  if (viewMode === 'card' && currentConfig?.username) {
+    renderGrouped(els.treeContainer, currentTree, currentConfig.username, (rootNode, highlightNumber) => {
+      selectedTreePrNumber = highlightNumber;
+      showTreeDetail(els, rootNode, highlightNumber);
+    }, selectedTreePrNumber);
+
+    // 選択中のツリー詳細パネルを復元
+    if (selectedTreePrNumber != null) {
+      restoreTreeDetail(els);
+    } else {
+      els.treeDetailPanel.classList.add('hidden');
+    }
+  } else {
+    selectedTreePrNumber = null;
+    els.treeDetailPanel.classList.add('hidden');
+    renderTree(els.treeContainer, currentTree);
+  }
+}
+
+function showTreeDetail(els: ReturnType<typeof getElements>, rootNode: PrNode, highlightNumber?: number): void {
+  els.treeDetailPanel.classList.remove('hidden');
+  els.treeDetailTitle.textContent = `🌳 [${rootNode.params.head}]`;
+  renderSubTree(els.treeDetailContent, rootNode, highlightNumber);
+}
+
+function restoreTreeDetail(els: ReturnType<typeof getElements>): void {
+  if (selectedTreePrNumber == null) return;
+
+  const node = findNodeByNumber(currentTree, selectedTreePrNumber);
+  if (!node) {
+    selectedTreePrNumber = null;
+    els.treeDetailPanel.classList.add('hidden');
+    return;
+  }
+
+  const root = findTreeRoot(currentTree, node);
+  if (root) {
+    const subtree = extractRelatedSubtree(root, node);
+    if (subtree) {
+      showTreeDetail(els, subtree, selectedTreePrNumber);
+    }
+  }
+}
+
+function findNodeByNumber(trees: PrNode[], number: number): PrNode | null {
+  for (const tree of trees) {
+    if (tree.params.number === number) return tree;
+    const found = findNodeByNumber(tree.children, number);
+    if (found) return found;
+  }
+  return null;
+}
+
+function updateViewButtons(els: ReturnType<typeof getElements>): void {
+  els.viewCardBtn.classList.toggle('active', viewMode === 'card');
+  els.viewTreeBtn.classList.toggle('active', viewMode === 'tree');
 }
 
 async function fetchAndRender(els: ReturnType<typeof getElements>): Promise<void> {
@@ -52,8 +134,10 @@ async function fetchAndRender(els: ReturnType<typeof getElements>): Promise<void
     nodes = filterKeyword(nodes, currentConfig?.username);
     nodes = filterCiPass(nodes, false);
     nodes = filterNoApproved(nodes, false);
-    const tree = buildTree(nodes);
-    renderTree(els.treeContainer, tree);
+    currentNodes = nodes;
+    currentTree = buildTree(nodes);
+
+    renderCurrentView(els);
     els.lastUpdated.textContent = `Updated: ${new Date().toLocaleTimeString()}`;
   } catch (err) {
     els.treeContainer.innerHTML = `<div class="error">Error: ${err}</div>`;
@@ -68,6 +152,8 @@ function startPolling(els: ReturnType<typeof getElements>, intervalSec: number):
 function init(): void {
   const els = getElements();
   const config = loadConfig();
+  viewMode = loadViewMode();
+  updateViewButtons(els);
 
   // 設定復元
   if (config) {
@@ -79,6 +165,21 @@ function init(): void {
     client = new GitHubClient(config.token, config.owner, config.repo);
     currentConfig = config;
   }
+
+  // ビュー切り替え
+  els.viewCardBtn.addEventListener('click', () => {
+    viewMode = 'card';
+    saveViewMode(viewMode);
+    updateViewButtons(els);
+    renderCurrentView(els);
+  });
+
+  els.viewTreeBtn.addEventListener('click', () => {
+    viewMode = 'tree';
+    saveViewMode(viewMode);
+    updateViewButtons(els);
+    renderCurrentView(els);
+  });
 
   // 設定パネルトグル
   els.settingsBtn.addEventListener('click', () => {
@@ -115,17 +216,31 @@ function init(): void {
     startPolling(els, newConfig.pollingInterval);
   });
 
+  // ツリー詳細パネルを閉じる
+  els.treeDetailClose.addEventListener('click', () => {
+    selectedTreePrNumber = null;
+    els.treeDetailPanel.classList.add('hidden');
+    els.treeContainer.querySelectorAll('.pr-card.pr-highlight').forEach((el) => {
+      el.classList.remove('pr-highlight');
+    });
+  });
+
   // 手動更新
   els.refreshBtn.addEventListener('click', () => fetchAndRender(els));
 
-  // リンクをブラウザで開く
-  els.treeContainer.addEventListener('click', (e) => {
+  // クリックでブラウザを開く（data-url を持つ要素、または親要素）
+  const handleUrlClick = (e: Event) => {
     const target = e.target as HTMLElement;
-    if (target.tagName === 'A' && target.dataset.url) {
+    // ツリーバッジのクリックは無視（専用ハンドラがある）
+    if (target.closest('.tree-badge')) return;
+    const clickable = target.closest('[data-url]') as HTMLElement | null;
+    if (clickable?.dataset.url) {
       e.preventDefault();
-      window.electronAPI.openExternal(target.dataset.url);
+      window.electronAPI.openExternal(clickable.dataset.url);
     }
-  });
+  };
+  els.treeContainer.addEventListener('click', handleUrlClick);
+  els.treeDetailContent.addEventListener('click', handleUrlClick);
 
   // 初回読み込み
   if (client) {

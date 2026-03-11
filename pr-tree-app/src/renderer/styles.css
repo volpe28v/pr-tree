@@ -11,6 +11,9 @@ body {
   color: #d4d4d4;
   overflow-x: hidden;
   user-select: none;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
 }
 
 #header {
@@ -47,6 +50,32 @@ body {
 
 #controls button:hover {
   background: #3c3c3c;
+}
+
+#view-toggle {
+  display: flex;
+  gap: 0;
+}
+
+.view-btn {
+  border-radius: 0 !important;
+  font-size: 12px !important;
+  padding: 2px 6px !important;
+}
+
+.view-btn:first-child {
+  border-radius: 3px 0 0 3px !important;
+}
+
+.view-btn:last-child {
+  border-radius: 0 3px 3px 0 !important;
+  border-left: none !important;
+}
+
+.view-btn.active {
+  background: #0e639c !important;
+  border-color: #0e639c !important;
+  color: white;
 }
 
 #settings-panel {
@@ -112,7 +141,8 @@ body {
   font-size: 12px;
   line-height: 1.6;
   overflow-y: auto;
-  height: calc(100vh - 90px);
+  flex: 1;
+  min-height: 0;
 }
 
 .tree-node {
@@ -120,7 +150,8 @@ body {
 }
 
 .tree-prefix {
-  color: #555;
+  color: #666;
+  white-space: pre;
 }
 
 .branch-name {
@@ -168,10 +199,16 @@ body {
 
 .pr-line {
   padding: 0 4px;
+  cursor: pointer;
 }
 
 .pr-line:hover {
   background: #2a2d2e;
+}
+
+.pr-line.pr-highlight {
+  background: #264f78;
+  border-left: 2px solid #0e639c;
 }
 
 .loading {
@@ -183,4 +220,111 @@ body {
 .error {
   color: #f44747;
   padding: 10px;
+}
+
+.section-header {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e0e0e0;
+  padding: 8px 8px 4px;
+  margin-top: 4px;
+  border-bottom: 1px solid #333;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+}
+
+.pr-card {
+  padding: 6px 12px;
+  border-bottom: 1px solid #2a2a2a;
+  cursor: pointer;
+}
+
+.pr-card:hover {
+  background: #2a2d2e;
+}
+
+.pr-card.pr-highlight {
+  background: #264f78;
+  border-left: 2px solid #0e639c;
+}
+
+.pr-card-line1 {
+  white-space: nowrap;
+}
+
+.pr-card-line2 {
+  padding-left: 20px;
+  font-size: 11px;
+  color: #888;
+}
+
+.pr-card-line3 {
+  padding-left: 20px;
+  font-size: 11px;
+}
+
+.pr-number {
+  color: #888;
+}
+
+.pr-approver {
+  color: #4ec9b0;
+  font-size: 11px;
+}
+
+.tree-badge {
+  display: inline-block;
+  cursor: pointer;
+  font-size: 12px;
+  margin-left: 4px;
+  opacity: 0.6;
+}
+
+.tree-badge:hover {
+  opacity: 1;
+}
+
+#tree-detail-panel {
+  border-top: 2px solid #0e639c;
+  background: #252526;
+  max-height: 40vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#tree-detail-panel.hidden {
+  display: none;
+}
+
+#tree-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 10px;
+  background: #2d2d2d;
+  border-bottom: 1px solid #3c3c3c;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+#tree-detail-close {
+  background: none;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 4px;
+}
+
+#tree-detail-close:hover {
+  color: #e0e0e0;
+}
+
+#tree-detail-content {
+  padding: 8px 4px;
+  overflow-y: auto;
+  flex: 1;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
 }
