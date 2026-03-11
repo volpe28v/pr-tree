@@ -14,6 +14,7 @@
         <button id="view-card-btn" class="view-btn active" title="Card view">☰</button>
         <button id="view-tree-btn" class="view-btn" title="Tree view">🌳</button>
       </div>
+      <button id="hide-approved-btn" class="toggle-btn" title="Hide approved PRs">✅</button>
       <button id="refresh-btn" title="Refresh">↻</button>
       <button id="settings-btn" title="Settings">⚙</button>
     </div>
@@ -24,8 +25,13 @@
       <input type="password" id="token-input" placeholder="ghp_...">
     </div>
     <div class="setting-row">
-      <label>Owner/Repo</label>
-      <input type="text" id="repo-input" placeholder="owner/repo">
+      <label>Repositories</label>
+      <div id="repos-list"></div>
+    </div>
+    <div class="setting-row">
+      <label></label>
+      <input type="text" id="repo-add-input" placeholder="owner/repo">
+      <button id="repo-add-btn" class="btn-small">+</button>
     </div>
     <div class="setting-row">
       <label>Account</label>

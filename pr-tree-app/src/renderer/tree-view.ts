@@ -14,18 +14,24 @@ export function renderGrouped(
   trees: PrNode[],
   username: string,
   onShowTree?: (rootNode: PrNode, highlightNumber: number) => void,
-  selectedNumber?: number | null
+  selectedNumber?: number | null,
+  hideApproved?: boolean
 ): void {
   container.innerHTML = '';
 
   const allPrs = flattenPrs(trees);
 
   const myPrs = allPrs.filter((n) => n.params.user === username);
-  const reviewPrs = allPrs.filter(
+  let reviewPrs = allPrs.filter(
     (n) =>
       n.params.user !== username &&
       (n.params.reviewers || []).some((r) => r === username)
   );
+
+  // hideApproved は Review Requested セクションのみに適用
+  if (hideApproved) {
+    reviewPrs = reviewPrs.filter((n) => !n.params.approved);
+  }
 
   if (myPrs.length > 0) {
     renderSection(container, '📝 My PRs', myPrs, trees, onShowTree, selectedNumber);
@@ -194,6 +200,7 @@ function renderPrCard(
     treeBadgeHtml +
     `</div>` +
     `<div class="pr-card-line2">` +
+    (p.repoFullName ? `<span class="pr-repo">${esc(p.repoFullName)}</span> ` : '') +
     `<span class="branch-name">[${esc(p.head)}]</span>` +
     ` ← <span class="branch-name-only">[${esc(p.base || '')}]</span>` +
     `</div>` +

@@ -11,7 +11,8 @@ export function createPrNode(params: PrParams): PrNode {
 }
 
 export function buildPrNodes(
-  prs: (GitHubPr & { status: string; files: GitHubFile[]; reviews: GitHubReview[]; mergeable: boolean | null })[]
+  prs: (GitHubPr & { status: string; files: GitHubFile[]; reviews: GitHubReview[]; mergeable: boolean | null })[],
+  repoFullName?: string
 ): PrNode[] {
   return prs.map((pr) =>
     createPrNode({
@@ -27,6 +28,7 @@ export function buildPrNodes(
       approvers: [...new Set(pr.reviews.filter((r) => r.state === 'APPROVED').map((r) => r.user.login))],
       mergeable: pr.mergeable,
       files: pr.files.map((f) => ({ status: f.status, name: f.filename })),
+      repoFullName,
     })
   );
 }

@@ -12,6 +12,7 @@ export interface PrParams {
   mergeable?: boolean | null;
   files?: FileChange[];
   currentBranch?: boolean;
+  repoFullName?: string;
 }
 
 export interface FileChange {
@@ -47,10 +48,17 @@ export interface GitHubCheckRun {
   completed_at: string | null;
 }
 
-export interface AppConfig {
-  token: string;
+export interface RepoEntry {
   owner: string;
   repo: string;
+}
+
+export interface AppConfig {
+  token: string;
+  repos: RepoEntry[];
   pollingInterval: number;
   username?: string;
+  // 後方互換
+  owner?: string;
+  repo?: string;
 }

@@ -20,7 +20,8 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 6px 10px;
+  padding: 0 10px;
+  height: 38px;
   background: #252526;
   border-bottom: 1px solid #3c3c3c;
   -webkit-app-region: drag;
@@ -30,6 +31,7 @@ body {
   font-weight: 600;
   font-size: 13px;
   color: #e0e0e0;
+  padding-left: 64px;
 }
 
 #controls {
@@ -78,6 +80,11 @@ body {
   color: white;
 }
 
+.toggle-btn.active {
+  background: #0e639c !important;
+  border-color: #0e639c !important;
+}
+
 #settings-panel {
   padding: 10px;
   background: #2d2d2d;
@@ -90,7 +97,7 @@ body {
 
 .setting-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 6px;
   gap: 8px;
 }
@@ -125,6 +132,45 @@ body {
   background: #1177bb;
 }
 
+.btn-small {
+  padding: 3px 8px !important;
+  font-size: 14px !important;
+  line-height: 1;
+}
+
+#repos-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.repo-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #d4d4d4;
+}
+
+.repo-item span {
+  flex: 1;
+}
+
+.repo-remove-btn {
+  background: none !important;
+  border: none !important;
+  color: #888 !important;
+  cursor: pointer;
+  font-size: 12px !important;
+  padding: 0 4px !important;
+}
+
+.repo-remove-btn:hover {
+  color: #f44747 !important;
+  background: none !important;
+}
+
 #status-bar {
   display: flex;
   justify-content: space-between;
@@ -141,12 +187,15 @@ body {
   font-size: 12px;
   line-height: 1.6;
   overflow-y: auto;
+  overflow-x: hidden;
   flex: 1;
   min-height: 0;
 }
 
 .tree-node {
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tree-prefix {
@@ -247,8 +296,12 @@ body {
   border-left: 2px solid #0e639c;
 }
 
-.pr-card-line1 {
+.pr-card-line1,
+.pr-card-line2,
+.pr-card-line3 {
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pr-card-line2 {
@@ -269,6 +322,11 @@ body {
 .pr-approver {
   color: #4ec9b0;
   font-size: 11px;
+}
+
+.pr-repo {
+  color: #ce9178;
+  font-size: 10px;
 }
 
 .tree-badge {
