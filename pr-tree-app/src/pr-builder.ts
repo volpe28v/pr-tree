@@ -29,6 +29,8 @@ export function buildPrNodes(
       mergeable: pr.mergeable,
       files: pr.files.map((f) => ({ status: f.status, name: f.filename })),
       repoFullName,
+      updatedAt: pr.updated_at,
+      draft: pr.draft,
     })
   );
 }

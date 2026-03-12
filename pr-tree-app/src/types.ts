@@ -13,6 +13,8 @@ export interface PrParams {
   files?: FileChange[];
   currentBranch?: boolean;
   repoFullName?: string;
+  updatedAt?: string;
+  draft?: boolean;
 }
 
 export interface FileChange {
@@ -28,6 +30,8 @@ export interface GitHubPr {
   base: { ref: string };
   head: { ref: string; sha: string };
   html_url: string;
+  updated_at: string;
+  draft: boolean;
   mergeable?: boolean | null;
 }
 
@@ -58,6 +62,7 @@ export interface AppConfig {
   repos: RepoEntry[];
   pollingInterval: number;
   username?: string;
+  excludeKeywords?: string;
   // 後方互換
   owner?: string;
   repo?: string;

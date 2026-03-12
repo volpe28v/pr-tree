@@ -69,9 +69,12 @@ body {
   border-radius: 3px 0 0 3px !important;
 }
 
+.view-btn:not(:first-child) {
+  border-left: none !important;
+}
+
 .view-btn:last-child {
   border-radius: 0 3px 3px 0 !important;
-  border-left: none !important;
 }
 
 .view-btn.active {
@@ -333,6 +336,66 @@ body {
 
 .pr-repo {
   color: #ce9178;
+  font-size: 10px;
+}
+
+.pr-updated {
+  color: #666;
+  font-size: 10px;
+}
+
+/* Compact view */
+.compact-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  font-size: 12px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.compact-row:hover {
+  background: #2a2d2e;
+}
+
+.compact-row.pr-highlight {
+  background: #264f78;
+  border-left: 2px solid #0e639c;
+}
+
+.compact-approve {
+  flex: 0 0 auto;
+  width: 20px;
+  text-align: center;
+  font-size: 11px;
+}
+
+.compact-number {
+  flex: 0 0 auto;
+  color: #888;
+  font-size: 11px;
+}
+
+.compact-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #6a9955;
+}
+
+.compact-user {
+  flex: 0 0 auto;
+  color: #569cd6;
+  font-size: 11px;
+}
+
+.compact-time {
+  flex: 0 0 auto;
+  color: #666;
   font-size: 10px;
 }
 

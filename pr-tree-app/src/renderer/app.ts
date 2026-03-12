@@ -1,14 +1,14 @@
 import { GitHubClient } from '../github-client';
 import { buildPrNodes, filterKeyword, filterCiPass, filterNoApproved, PrNode } from '../pr-builder';
 import { buildTree } from '../tree-builder';
-import { renderTree, renderGrouped, renderSubTree, findTreeRoot, extractRelatedSubtree } from './tree-view';
+import { renderTree, renderGrouped, renderCompact, renderSubTree, findTreeRoot, extractRelatedSubtree } from './tree-view';
 import { AppConfig, RepoEntry } from '../types';
 
 const CONFIG_KEY = 'pr-tree-config';
 const VIEW_MODE_KEY = 'pr-tree-view-mode';
 const HIDE_APPROVED_KEY = 'pr-tree-hide-approved';
 
-type ViewMode = 'card' | 'tree';
+type ViewMode = 'card' | 'compact' | 'tree';
 
 let pollingTimer: ReturnType<typeof setInterval> | null = null;
 let clients: { client: GitHubClient; repoFullName: string }[] = [];
@@ -20,6 +20,7 @@ let selectedTreePrNumber: number | null = null;
 let settingsRepos: RepoEntry[] = [];
 let hideApproved = false;
 let lastFetchedNodes: PrNode[] = [];
+let knownPrNumbers: Set<number> = new Set();
 
 function loadConfig(): AppConfig | null {
   const raw = localStorage.getItem(CONFIG_KEY);
@@ -67,12 +68,14 @@ function getElements() {
     repoAddInput: document.getElementById('repo-add-input') as HTMLInputElement,
     repoAddBtn: document.getElementById('repo-add-btn')!,
     usernameInput: document.getElementById('username-input') as HTMLInputElement,
+    excludeKeywordsInput: document.getElementById('exclude-keywords-input') as HTMLInputElement,
     intervalInput: document.getElementById('interval-input') as HTMLInputElement,
     saveSettingsBtn: document.getElementById('save-settings-btn')!,
     lastUpdated: document.getElementById('last-updated')!,
     rateLimit: document.getElementById('rate-limit')!,
     treeContainer: document.getElementById('tree-container')!,
     viewCardBtn: document.getElementById('view-card-btn')!,
+    viewCompactBtn: document.getElementById('view-compact-btn')!,
     viewTreeBtn: document.getElementById('view-tree-btn')!,
     hideApprovedBtn: document.getElementById('hide-approved-btn')!,
     treeDetailPanel: document.getElementById('tree-detail-panel')!,
@@ -109,20 +112,24 @@ function renderReposList(els: ReturnType<typeof getElements>): void {
   });
 }
 
-function repoNameText(config: AppConfig): string {
-  if (config.repos.length === 0) return '';
-  if (config.repos.length === 1) return `${config.repos[0].owner}/${config.repos[0].repo}`;
-  return `${config.repos[0].owner}/${config.repos[0].repo} +${config.repos.length - 1}`;
+function repoNameText(_config: AppConfig): string {
+  return 'PR Tree';
 }
 
 function renderCurrentView(els: ReturnType<typeof getElements>): void {
   if (currentTree.length === 0 && currentNodes.length === 0) return;
 
-  if (viewMode === 'card' && currentConfig?.username) {
-    renderGrouped(els.treeContainer, currentTree, currentConfig.username, (rootNode, highlightNumber) => {
-      selectedTreePrNumber = highlightNumber;
-      showTreeDetail(els, rootNode, highlightNumber);
-    }, selectedTreePrNumber, hideApproved);
+  const showTreeCallback = (rootNode: PrNode, highlightNumber: number) => {
+    selectedTreePrNumber = highlightNumber;
+    showTreeDetail(els, rootNode, highlightNumber);
+  };
+
+  if ((viewMode === 'card' || viewMode === 'compact') && currentConfig?.username) {
+    if (viewMode === 'compact') {
+      renderCompact(els.treeContainer, currentTree, currentConfig.username, showTreeCallback, selectedTreePrNumber, hideApproved);
+    } else {
+      renderGrouped(els.treeContainer, currentTree, currentConfig.username, showTreeCallback, selectedTreePrNumber, hideApproved);
+    }
 
     if (selectedTreePrNumber != null) {
       restoreTreeDetail(els);
@@ -172,17 +179,47 @@ function findNodeByNumber(trees: PrNode[], number: number): PrNode | null {
 
 function updateViewButtons(els: ReturnType<typeof getElements>): void {
   els.viewCardBtn.classList.toggle('active', viewMode === 'card');
+  els.viewCompactBtn.classList.toggle('active', viewMode === 'compact');
   els.viewTreeBtn.classList.toggle('active', viewMode === 'tree');
   els.hideApprovedBtn.classList.toggle('active', hideApproved);
+}
+
+function filterExcludeKeywords(nodes: PrNode[], keywords?: string): PrNode[] {
+  if (!keywords) return nodes;
+  const kws = keywords.split(',').map((k) => k.trim()).filter((k) => k.length > 0);
+  if (kws.length === 0) return nodes;
+  return nodes.filter((n) => !kws.some((kw) => (n.params.title || '').includes(kw)));
 }
 
 function applyFiltersAndBuildTree(): void {
   let nodes = [...lastFetchedNodes];
   nodes = filterKeyword(nodes, currentConfig?.username);
   nodes = filterCiPass(nodes, false);
+  nodes = filterExcludeKeywords(nodes, currentConfig?.excludeKeywords);
   // hideApproved はカードの Review Requested セクションのみに適用するため、ここでは適用しない
   currentNodes = nodes;
   currentTree = buildTree(nodes);
+}
+
+function notifyNewPrs(newNodes: PrNode[]): void {
+  if (knownPrNumbers.size === 0) {
+    // 初回取得時は通知せず記録のみ
+    knownPrNumbers = new Set(newNodes.map((n) => n.params.number!).filter(Boolean));
+    return;
+  }
+
+  const added = newNodes.filter(
+    (n) => n.params.number != null && !knownPrNumbers.has(n.params.number)
+  );
+
+  for (const pr of added) {
+    const p = pr.params;
+    new Notification('PR Tree - New PR', {
+      body: `#${p.number} ${p.title || ''}\n@${p.user || ''}${p.repoFullName ? ` (${p.repoFullName})` : ''}`,
+    });
+  }
+
+  knownPrNumbers = new Set(newNodes.map((n) => n.params.number!).filter(Boolean));
 }
 
 async function fetchAndRender(els: ReturnType<typeof getElements>): Promise<void> {
@@ -198,7 +235,9 @@ async function fetchAndRender(els: ReturnType<typeof getElements>): Promise<void
       })
     );
 
-    lastFetchedNodes = results.flat();
+    const newNodes = results.flat();
+    notifyNewPrs(newNodes);
+    lastFetchedNodes = newNodes;
     applyFiltersAndBuildTree();
 
     renderCurrentView(els);
@@ -226,6 +265,7 @@ function init(): void {
     settingsRepos = [...config.repos];
     renderReposList(els);
     els.usernameInput.value = config.username || '';
+    els.excludeKeywordsInput.value = config.excludeKeywords || '';
     els.intervalInput.value = String(config.pollingInterval);
     els.repoName.textContent = repoNameText(config);
     clients = buildClients(config);
@@ -252,6 +292,13 @@ function init(): void {
   // ビュー切り替え
   els.viewCardBtn.addEventListener('click', () => {
     viewMode = 'card';
+    saveViewMode(viewMode);
+    updateViewButtons(els);
+    renderCurrentView(els);
+  });
+
+  els.viewCompactBtn.addEventListener('click', () => {
+    viewMode = 'compact';
     saveViewMode(viewMode);
     updateViewButtons(els);
     renderCurrentView(els);
@@ -285,6 +332,7 @@ function init(): void {
 
     const token = els.tokenInput.value.trim();
     const username = els.usernameInput.value.trim() || undefined;
+    const excludeKeywords = els.excludeKeywordsInput.value.trim() || undefined;
     const interval = parseInt(els.intervalInput.value, 10) || 60;
 
     if (!token || settingsRepos.length === 0) {
@@ -297,6 +345,7 @@ function init(): void {
       repos: [...settingsRepos],
       pollingInterval: interval,
       username,
+      excludeKeywords,
     };
 
     saveConfig(newConfig);

@@ -28,7 +28,8 @@ export function renderGrouped(
       (n.params.reviewers || []).some((r) => r === username)
   );
 
-  // hideApproved は Review Requested セクションのみに適用
+  // Review Requested: ドラフトPRと承認済みPRを非表示
+  reviewPrs = reviewPrs.filter((n) => !n.params.draft);
   if (hideApproved) {
     reviewPrs = reviewPrs.filter((n) => !n.params.approved);
   }
@@ -38,6 +39,44 @@ export function renderGrouped(
   }
   if (reviewPrs.length > 0) {
     renderSection(container, '👀 Review Requested', reviewPrs, trees, onShowTree, selectedNumber);
+  }
+  if (myPrs.length === 0 && reviewPrs.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'loading';
+    empty.textContent = 'No PRs found.';
+    container.appendChild(empty);
+  }
+}
+
+export function renderCompact(
+  container: HTMLElement,
+  trees: PrNode[],
+  username: string,
+  onShowTree?: (rootNode: PrNode, highlightNumber: number) => void,
+  selectedNumber?: number | null,
+  hideApproved?: boolean
+): void {
+  container.innerHTML = '';
+
+  const allPrs = flattenPrs(trees);
+
+  const myPrs = allPrs.filter((n) => n.params.user === username);
+  let reviewPrs = allPrs.filter(
+    (n) =>
+      n.params.user !== username &&
+      (n.params.reviewers || []).some((r) => r === username)
+  );
+
+  reviewPrs = reviewPrs.filter((n) => !n.params.draft);
+  if (hideApproved) {
+    reviewPrs = reviewPrs.filter((n) => !n.params.approved);
+  }
+
+  if (myPrs.length > 0) {
+    renderCompactSection(container, '📝 My PRs', myPrs, trees, onShowTree, selectedNumber);
+  }
+  if (reviewPrs.length > 0) {
+    renderCompactSection(container, '👀 Review Requested', reviewPrs, trees, onShowTree, selectedNumber);
   }
   if (myPrs.length === 0 && reviewPrs.length === 0) {
     const empty = document.createElement('div');
@@ -196,7 +235,7 @@ function renderPrCard(
   card.innerHTML =
     `<div class="pr-card-line1">` +
     `<span class="status-badge">${statusIcon}</span> ${approveText}${conflictIcon ? ' ' + conflictIcon : ''} ` +
-    `<span class="pr-title">${esc(p.title || '')} <span class="pr-number">#${p.number}</span></span>` +
+    `<span class="pr-title" title="${esc(p.title || '')}">${esc(p.title || '')} <span class="pr-number">#${p.number}</span></span>` +
     treeBadgeHtml +
     `</div>` +
     `<div class="pr-card-line2">` +
@@ -207,6 +246,7 @@ function renderPrCard(
     `<div class="pr-card-line3">` +
     `<span class="pr-user">@${esc(p.user || '')}</span>` +
     (reviewerText ? `  <span class="pr-reviewer">${reviewerText}</span>` : '') +
+    (p.updatedAt ? `  <span class="pr-updated">${formatRelativeTime(p.updatedAt)}</span>` : '') +
     `</div>`;
 
   if (showTreeBadge && onShowTree) {
@@ -285,12 +325,13 @@ function renderItem(
     `</div>` +
     `<div class="tree-node">` +
     `<span class="tree-prefix">${esc(prefix + bodyPrefix)}</span>` +
-    `           <span class="pr-title">${esc(p.title || '')} #${p.number}</span>` +
+    `           <span class="pr-title" title="${esc(p.title || '')}">${esc(p.title || '')} #${p.number}</span>` +
     `</div>` +
     `<div class="tree-node">` +
     `<span class="tree-prefix">${esc(prefix + bodyPrefix)}</span>` +
     `           <span class="pr-user">@${esc(p.user || '')}</span>` +
     (reviewerText ? `  <span class="pr-reviewer">${reviewerText}</span>` : '') +
+    (p.updatedAt ? `  <span class="pr-updated">${formatRelativeTime(p.updatedAt)}</span>` : '') +
     `</div>`;
   container.appendChild(wrapper);
 
@@ -301,6 +342,79 @@ function addSpacer(container: HTMLElement): void {
   const spacer = document.createElement('div');
   spacer.style.height = '4px';
   container.appendChild(spacer);
+}
+
+function renderCompactSection(
+  container: HTMLElement,
+  title: string,
+  prs: PrNode[],
+  trees: PrNode[],
+  onShowTree?: (rootNode: PrNode, highlightNumber: number) => void,
+  selectedNumber?: number | null
+): void {
+  const header = document.createElement('div');
+  header.className = 'section-header';
+  header.textContent = title;
+  container.appendChild(header);
+
+  for (const pr of prs) {
+    renderCompactRow(container, pr, trees, onShowTree, selectedNumber);
+  }
+}
+
+function renderCompactRow(
+  container: HTMLElement,
+  item: PrNode,
+  trees: PrNode[],
+  onShowTree?: (rootNode: PrNode, highlightNumber: number) => void,
+  selectedNumber?: number | null
+): void {
+  const p = item.params;
+  const statusIcon = statusEmoji(p.status);
+  const approveText = formatApproversCompact(p.approved, p.approvers);
+  const showTreeBadge = isInNonTrivialTree(trees, item);
+  const isSelected = selectedNumber != null && p.number === selectedNumber;
+
+  const row = document.createElement('div');
+  row.className = 'compact-row' + (isSelected ? ' pr-highlight' : '');
+  row.dataset.url = p.url || '';
+
+  const treeBadgeHtml = showTreeBadge
+    ? `<span class="tree-badge" data-tree-pr="${p.number}" title="Show tree">🌳</span>`
+    : '';
+
+  row.innerHTML =
+    `<span class="status-badge">${statusIcon}</span>` +
+    `<span class="compact-approve">${approveText}</span>` +
+    `<span class="compact-number">#${p.number}</span>` +
+    `<span class="compact-title" title="${esc(p.title || '')}">${esc(p.title || '')}</span>` +
+    `<span class="compact-user">@${esc(p.user || '')}</span>` +
+    (p.updatedAt ? `<span class="compact-time">${formatRelativeTime(p.updatedAt)}</span>` : '') +
+    treeBadgeHtml;
+
+  if (showTreeBadge && onShowTree) {
+    row.querySelector('.tree-badge')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      container.querySelectorAll('.compact-row.pr-highlight').forEach((el) => {
+        el.classList.remove('pr-highlight');
+      });
+      row.classList.add('pr-highlight');
+
+      const root = findTreeRoot(trees, item);
+      if (root) {
+        const subtree = extractRelatedSubtree(root, item);
+        if (subtree) onShowTree(subtree, p.number!);
+      }
+    });
+  }
+
+  container.appendChild(row);
+}
+
+function formatApproversCompact(approved?: boolean, approvers?: string[]): string {
+  if (!approved || !approvers || approvers.length === 0) return '⬜';
+  const count = approvers.length;
+  return `<span class="pr-approver">✅${count > 1 ? count : ''}</span>`;
 }
 
 function statusEmoji(status?: string): string {
@@ -329,6 +443,18 @@ function formatReviewers(reviewers?: string[]): string {
   const first = reviewers[0];
   const rest = reviewers.length - 1;
   return rest > 0 ? `👀 ${esc(first)} +${rest}` : `👀 ${esc(first)}`;
+}
+
+function formatRelativeTime(dateStr: string): string {
+  const now = Date.now();
+  const diff = now - new Date(dateStr).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 function esc(str: string): string {

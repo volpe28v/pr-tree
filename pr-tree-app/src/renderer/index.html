@@ -8,10 +8,11 @@
 </head>
 <body>
   <div id="header">
-    <div id="repo-name"></div>
+    <div id="repo-name">PR Tree</div>
     <div id="controls">
       <div id="view-toggle">
         <button id="view-card-btn" class="view-btn active" title="Card view">☰</button>
+        <button id="view-compact-btn" class="view-btn" title="Compact view">━</button>
         <button id="view-tree-btn" class="view-btn" title="Tree view">🌳</button>
       </div>
       <button id="hide-approved-btn" class="toggle-btn" title="Hide approved PRs">✅</button>
@@ -36,6 +37,10 @@
     <div class="setting-row">
       <label>Account</label>
       <input type="text" id="username-input" placeholder="GitHub username (empty = all)">
+    </div>
+    <div class="setting-row">
+      <label>Exclude</label>
+      <input type="text" id="exclude-keywords-input" placeholder="comma separated keywords">
     </div>
     <div class="setting-row">
       <label>Interval (sec)</label>
