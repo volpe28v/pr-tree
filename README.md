@@ -1,49 +1,97 @@
 # pr-tree
-Display github pull request on the command line in tree view
 
-# Usage
-- Get `GITHUB_API_TOKEN` (check `repo`)
-  - https://help.github.com/en/articles/creating-a-personal-access-token-for-the-command-line
+GitHub Pull Request をツリー表示するツール。CLI 版とデスクトップアプリ版（Electron）の2種類があります。
 
-- Add `GITHUB_API_TOKEN` to .bashrc or .zshrc.
-  - `export GITHUB_API_TOKEN=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX`
+## Desktop App (Electron)
 
-- Execute `bundle install`
+macOS 向けの常駐型デスクトップアプリ。小さいウィンドウで PR ツリーをリアルタイム表示します。
 
-- Put the script in an executable directory
-  - ex) `/usr/local/bin/pr-tree`
-  - `ln -s /Users/volpe/repo/github.com/volpe28v/pr-tree/bin/pr-tree /usr/local/bin/pr-tree`
+### セットアップ
 
-- Run the following command
+```bash
+cd pr-tree-app
+npm install
 ```
+
+### 起動
+
+```bash
+cd pr-tree-app
+npm start
+```
+
+### 初期設定
+
+初回起動時に設定パネルが表示されます。
+
+1. **Token** - GitHub Personal Access Token（`repo` スコープ）を入力
+   - https://github.com/settings/tokens から発行
+2. **Repositories** - `owner/repo` 形式でリポジトリを追加（複数登録可）
+3. **Account** - 自分の GitHub ユーザー名を入力（My PRs / Review Requested の分類に使用）
+4. **Interval (sec)** - ポーリング間隔（秒）。デフォルト 60 秒
+5. **Save** を押して保存
+
+### 操作方法
+
+| ボタン | 機能 |
+|--------|------|
+| ☰ | カード表示（My PRs / Review Requested をセクション分け） |
+| 🌳 | ツリー表示（ブランチの親子関係をツリー構造で表示） |
+| ✅ | 承認済み PR の非表示トグル（Review Requested セクションのみ適用） |
+| ↻ | 手動更新 |
+| ⚙ | 設定パネルの開閉 |
+
+### 表示内容
+
+- **CI ステータス**: 🟢 成功 / 🔴 失敗 / 🟡 実行中 / ⚪ 未実行
+- **承認状態**: ✅ 承認者名（2名以上の場合は `+N` 表示）
+- **コンフリクト**: 💥 マージ不可
+- **ツリーバッジ**: 🌳 クリックでスタック PR のツリー詳細を画面下部に表示
+
+PR カードをクリックすると、ブラウザで該当 PR を開きます。
+
+---
+
+## CLI Version
+
+コマンドラインで PR をツリー表示します。
+
+### セットアップ
+
+- GitHub Personal Access Token（`repo` スコープ）を取得
+  - https://github.com/settings/tokens
+- 環境変数に追加
+  ```bash
+  export GITHUB_API_TOKEN=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+  ```
+- `bundle install` を実行
+- スクリプトを実行可能なパスに配置
+  ```bash
+  ln -s /path/to/pr-tree/bin/pr-tree /usr/local/bin/pr-tree
+  ```
+
+### 使い方
+
+```bash
+# 基本実行
 $ pr-tree
-```
 
-- Filter by user
-```
-$ pr-tree -k hoge
-```
+# ユーザーで絞り込み
+$ pr-tree -k username
 
-- Filter by reviewer
-```
-$ pr-tree -r hoge
-```
+# レビュアーで絞り込み
+$ pr-tree -r username
 
-- Specify github url
-```
-$ pr-tree -u ssh://git@github.com/hoge/fuga.git
-```
+# リポジトリURL指定
+$ pr-tree -u ssh://git@github.com/owner/repo.git
 
-- Show as markdown
-```
+# Markdown 形式で出力
 $ pr-tree -m
-```
 
-- Show changed files
-```
+# 変更ファイル表示
 $ pr-tree -f
 ```
 
-# Example
+### 表示例
 
 ![image](https://user-images.githubusercontent.com/754962/77252414-0cdea200-6c97-11ea-9ead-894bd9164ac9.png)
