@@ -157,6 +157,13 @@ body {
   flex: 1;
 }
 
+.repo-status {
+  flex: 0 0 auto !important;
+  width: 18px;
+  text-align: center;
+  font-size: 11px;
+}
+
 .repo-remove-btn {
   background: none !important;
   border: none !important;

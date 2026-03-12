@@ -12,6 +12,20 @@ export class GitHubClient {
     this.repo = repo;
   }
 
+  async checkConnection(): Promise<boolean> {
+    const url = `https://api.github.com/repos/${this.owner}/${this.repo}`;
+    const headers: Record<string, string> = {
+      Authorization: `token ${this.token}`,
+      Accept: 'application/vnd.github.v3+json',
+    };
+    try {
+      const res = await fetch(url, { headers });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async pullRequests(): Promise<GitHubPr[]> {
     const prs = await this.getRequest<GitHubPr[]>(this.url('/pulls'));
     if (!prs) return [];

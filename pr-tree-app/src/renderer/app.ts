@@ -88,6 +88,7 @@ function renderReposList(els: ReturnType<typeof getElements>): void {
     const item = document.createElement('div');
     item.className = 'repo-item';
     item.innerHTML =
+      `<span class="repo-status" data-repo-index="${i}">⏳</span>` +
       `<span>${r.owner}/${r.repo}</span>` +
       `<button class="repo-remove-btn" data-index="${i}" title="Remove">✕</button>`;
     item.querySelector('.repo-remove-btn')!.addEventListener('click', () => {
@@ -95,6 +96,16 @@ function renderReposList(els: ReturnType<typeof getElements>): void {
       renderReposList(els);
     });
     els.reposList.appendChild(item);
+
+    // 疎通チェック
+    const token = els.tokenInput.value.trim();
+    if (token) {
+      const client = new GitHubClient(token, r.owner, r.repo);
+      client.checkConnection().then((ok) => {
+        const badge = els.reposList.querySelector(`[data-repo-index="${i}"]`);
+        if (badge) badge.textContent = ok ? '✅' : '❌';
+      });
+    }
   });
 }
 
