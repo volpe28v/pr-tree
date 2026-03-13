@@ -201,25 +201,33 @@ function applyFiltersAndBuildTree(): void {
   currentTree = buildTree(nodes);
 }
 
-function notifyNewPrs(newNodes: PrNode[]): void {
+function notifyNewPrs(filteredNodes: PrNode[]): void {
+  const currentNumbers = new Set(filteredNodes.map((n) => n.params.number!).filter(Boolean));
+
   if (knownPrNumbers.size === 0) {
     // 初回取得時は通知せず記録のみ
-    knownPrNumbers = new Set(newNodes.map((n) => n.params.number!).filter(Boolean));
+    knownPrNumbers = currentNumbers;
     return;
   }
 
-  const added = newNodes.filter(
+  const added = filteredNodes.filter(
     (n) => n.params.number != null && !knownPrNumbers.has(n.params.number)
   );
 
   for (const pr of added) {
     const p = pr.params;
-    new Notification('PR Tree - New PR', {
+    const notification = new Notification('PR Tree - New PR', {
       body: `#${p.number} ${p.title || ''}\n@${p.user || ''}${p.repoFullName ? ` (${p.repoFullName})` : ''}`,
     });
+    if (p.url) {
+      const url = p.url;
+      notification.addEventListener('click', () => {
+        window.electronAPI.openExternal(url);
+      });
+    }
   }
 
-  knownPrNumbers = new Set(newNodes.map((n) => n.params.number!).filter(Boolean));
+  knownPrNumbers = currentNumbers;
 }
 
 async function fetchAndRender(els: ReturnType<typeof getElements>): Promise<void> {
@@ -235,10 +243,9 @@ async function fetchAndRender(els: ReturnType<typeof getElements>): Promise<void
       })
     );
 
-    const newNodes = results.flat();
-    notifyNewPrs(newNodes);
-    lastFetchedNodes = newNodes;
+    lastFetchedNodes = results.flat();
     applyFiltersAndBuildTree();
+    notifyNewPrs(currentNodes);
 
     renderCurrentView(els);
     els.lastUpdated.textContent = `Updated: ${new Date().toLocaleTimeString()}`;

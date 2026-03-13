@@ -235,7 +235,7 @@ function renderPrCard(
   card.innerHTML =
     `<div class="pr-card-line1">` +
     `<span class="status-badge">${statusIcon}</span> ${approveText}${conflictIcon ? ' ' + conflictIcon : ''} ` +
-    `<span class="pr-title" title="${esc(p.title || '')}">${esc(p.title || '')} <span class="pr-number">#${p.number}</span></span>` +
+    `<span class="pr-number">#${p.number}</span> <span class="pr-title" title="${esc(p.title || '')}">${esc(p.title || '')}</span>` +
     treeBadgeHtml +
     `</div>` +
     `<div class="pr-card-line2">` +
