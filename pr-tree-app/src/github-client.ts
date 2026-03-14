@@ -1,4 +1,4 @@
-import { GitHubPr, GitHubReview, GitHubFile, GitHubCheckRun } from './types';
+import { GitHubPr, GitHubReview, GitHubFile } from './types';
 
 export class GitHubClient {
   private token: string;
@@ -53,43 +53,34 @@ export class GitHubClient {
   }
 
   private async combinedStatus(sha: string): Promise<string> {
-    const statusResponse = await this.getRequest<{
-      state: string;
-      total_count: number;
-    }>(this.url(`/commits/${sha}/status`));
+    const [statusResponse, checkSuitesResponse] = await Promise.all([
+      this.getRequest<{
+        state: string;
+        total_count: number;
+      }>(this.url(`/commits/${sha}/status`)),
+      this.getRequest<{
+        check_suites: { status: string; conclusion: string | null; app: { name: string } }[];
+      }>(this.url(`/commits/${sha}/check-suites`)),
+    ]);
 
     const statusState = statusResponse?.state || 'success';
     const hasStatuses = (statusResponse?.total_count || 0) > 0;
 
-    const checkRunsResponse = await this.getRequest<{
-      check_runs: GitHubCheckRun[];
-    }>(this.url(`/commits/${sha}/check-runs`));
+    const checkSuites = checkSuitesResponse?.check_suites || [];
 
-    const checkRuns = checkRunsResponse?.check_runs || [];
-
-    // 同名check runは最新の結果のみ使う
-    const seen = new Set<string>();
-    const latestRuns = checkRuns
-      .sort((a, b) =>
-        (b.completed_at || '').localeCompare(a.completed_at || '')
-      )
-      .filter((cr) => {
-        if (seen.has(cr.name)) return false;
-        seen.add(cr.name);
-        return true;
-      });
-
-    const hasCheckFailure = latestRuns.some(
-      (cr) => cr.conclusion === 'failure'
+    const hasSuiteFailure = checkSuites.some(
+      (cs) => cs.conclusion === 'failure'
     );
-    const hasCheckPending = latestRuns.some(
-      (cr) => cr.status !== 'completed'
+    // queued のまま放置されている suite は無視し、in_progress のみ pending とする
+    const hasSuitePending = checkSuites.some(
+      (cs) => cs.status === 'in_progress'
     );
 
-    if ((hasStatuses && statusState === 'failure') || hasCheckFailure) {
-      return 'failure';
-    } else if ((hasStatuses && statusState === 'pending') || hasCheckPending) {
+    // in_progress があれば再実行中なので pending を優先
+    if (hasSuitePending || (hasStatuses && statusState === 'pending')) {
       return 'pending';
+    } else if ((hasStatuses && statusState === 'failure') || hasSuiteFailure) {
+      return 'failure';
     } else {
       return 'success';
     }

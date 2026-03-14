@@ -109,6 +109,12 @@ function flattenPrs(nodes: PrNode[]): PrNode[] {
     }
     result.push(...flattenPrs(node.children));
   }
+  // updatedAt 降順（新しい順）
+  result.sort((a, b) => {
+    const ta = a.params.updatedAt || '';
+    const tb = b.params.updatedAt || '';
+    return tb.localeCompare(ta);
+  });
   return result;
 }
 
@@ -235,7 +241,7 @@ function renderPrCard(
   card.innerHTML =
     `<div class="pr-card-line1">` +
     `<span class="status-badge">${statusIcon}</span> ${approveText}${conflictIcon ? ' ' + conflictIcon : ''} ` +
-    `<span class="pr-number">#${p.number}</span> <span class="pr-title" title="${esc(p.title || '')}">${esc(p.title || '')}</span>` +
+    `<span class="pr-number">#${p.number}</span> <span class="pr-title" data-tooltip="${esc(p.title || '')}">${esc(p.title || '')}</span>` +
     treeBadgeHtml +
     `</div>` +
     `<div class="pr-card-line2">` +
@@ -325,7 +331,7 @@ function renderItem(
     `</div>` +
     `<div class="tree-node">` +
     `<span class="tree-prefix">${esc(prefix + bodyPrefix)}</span>` +
-    `           <span class="pr-title" title="${esc(p.title || '')}">${esc(p.title || '')} #${p.number}</span>` +
+    `           <span class="pr-title" data-tooltip="${esc(p.title || '')}">${esc(p.title || '')} #${p.number}</span>` +
     `</div>` +
     `<div class="tree-node">` +
     `<span class="tree-prefix">${esc(prefix + bodyPrefix)}</span>` +
@@ -387,7 +393,7 @@ function renderCompactRow(
     `<span class="status-badge">${statusIcon}</span>` +
     `<span class="compact-approve">${approveText}</span>` +
     `<span class="compact-number">#${p.number}</span>` +
-    `<span class="compact-title" title="${esc(p.title || '')}">${esc(p.title || '')}</span>` +
+    `<span class="compact-title" data-tooltip="${esc(p.title || '')}">${esc(p.title || '')}</span>` +
     `<span class="compact-user">@${esc(p.user || '')}</span>` +
     (p.updatedAt ? `<span class="compact-time">${formatRelativeTime(p.updatedAt)}</span>` : '') +
     treeBadgeHtml;
