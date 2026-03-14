@@ -50,6 +50,20 @@ npm start
 
 PR カードをクリックすると、ブラウザで該当 PR を開きます。
 
+### ビルド・パッケージ
+
+```bash
+cd pr-tree-app
+
+# 開発時の起動（DevTools 付き）
+npm run dev
+
+# macOS アプリとしてパッケージング（ビルド → .app 生成 → /Applications にコピー）
+npm run package
+```
+
+`npm run package` を実行すると `/Applications/PRTree.app` が生成され、Launchpad や Spotlight から起動できます。
+
 ---
 
 ## CLI Version
