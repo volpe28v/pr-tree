@@ -254,6 +254,57 @@ async function fetchAndRender(els: ReturnType<typeof getElements>): Promise<void
   }
 }
 
+function setupTooltip(root: HTMLElement): void {
+  let tooltipEl: HTMLDivElement | null = null;
+  let hideTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function show(target: HTMLElement) {
+    const text = target.dataset.tooltip;
+    if (!text) return;
+
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+
+    if (!tooltipEl) {
+      tooltipEl = document.createElement('div');
+      tooltipEl.className = 'custom-tooltip';
+      document.body.appendChild(tooltipEl);
+    }
+
+    tooltipEl.textContent = text;
+    tooltipEl.style.display = 'block';
+
+    const rect = target.getBoundingClientRect();
+    tooltipEl.style.left = `${rect.left}px`;
+    tooltipEl.style.top = `${rect.bottom + 4}px`;
+
+    // 画面右端をはみ出さない
+    const tipRect = tooltipEl.getBoundingClientRect();
+    if (tipRect.right > window.innerWidth - 8) {
+      tooltipEl.style.left = `${window.innerWidth - tipRect.width - 8}px`;
+    }
+    // 画面下端をはみ出す場合は上に表示
+    if (tipRect.bottom > window.innerHeight - 8) {
+      tooltipEl.style.top = `${rect.top - tipRect.height - 4}px`;
+    }
+  }
+
+  function hide() {
+    hideTimer = setTimeout(() => {
+      if (tooltipEl) tooltipEl.style.display = 'none';
+    }, 50);
+  }
+
+  root.addEventListener('mouseover', (e) => {
+    const target = (e.target as HTMLElement).closest('[data-tooltip]') as HTMLElement | null;
+    if (target) show(target);
+  });
+
+  root.addEventListener('mouseout', (e) => {
+    const target = (e.target as HTMLElement).closest('[data-tooltip]') as HTMLElement | null;
+    if (target) hide();
+  });
+}
+
 function startPolling(els: ReturnType<typeof getElements>, intervalSec: number): void {
   if (pollingTimer) clearInterval(pollingTimer);
   pollingTimer = setInterval(() => fetchAndRender(els), intervalSec * 1000);
@@ -389,6 +440,9 @@ function init(): void {
   };
   els.treeContainer.addEventListener('click', handleUrlClick);
   els.treeDetailContent.addEventListener('click', handleUrlClick);
+
+  // カスタムツールチップ
+  setupTooltip(document.body);
 
   // 初回読み込み
   if (clients.length > 0) {
