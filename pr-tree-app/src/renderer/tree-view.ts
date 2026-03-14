@@ -251,6 +251,7 @@ function renderPrCard(
     `</div>` +
     `<div class="pr-card-line3">` +
     `<span class="pr-user">@${esc(p.user || '')}</span>` +
+    (p.draft ? ' <span class="pr-draft-badge">DRAFT</span>' : '') +
     (reviewerText ? `  <span class="pr-reviewer">${reviewerText}</span>` : '') +
     (p.updatedAt ? `  <span class="pr-updated">${formatRelativeTime(p.updatedAt)}</span>` : '') +
     `</div>`;
@@ -336,6 +337,7 @@ function renderItem(
     `<div class="tree-node">` +
     `<span class="tree-prefix">${esc(prefix + bodyPrefix)}</span>` +
     `           <span class="pr-user">@${esc(p.user || '')}</span>` +
+    (p.draft ? ' <span class="pr-draft-badge">DRAFT</span>' : '') +
     (reviewerText ? `  <span class="pr-reviewer">${reviewerText}</span>` : '') +
     (p.updatedAt ? `  <span class="pr-updated">${formatRelativeTime(p.updatedAt)}</span>` : '') +
     `</div>`;
@@ -395,6 +397,7 @@ function renderCompactRow(
     `<span class="compact-number">#${p.number}</span>` +
     `<span class="compact-title" data-tooltip="${esc(p.title || '')}">${esc(p.title || '')}</span>` +
     `<span class="compact-user">@${esc(p.user || '')}</span>` +
+    (p.draft ? '<span class="pr-draft-badge">DRAFT</span>' : '') +
     (p.updatedAt ? `<span class="compact-time">${formatRelativeTime(p.updatedAt)}</span>` : '') +
     treeBadgeHtml;
 
