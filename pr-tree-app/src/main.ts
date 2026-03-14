@@ -21,7 +21,9 @@ function createWindow(): void {
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   // 開発時は DevTools を開く
-  mainWindow.webContents.openDevTools({ mode: 'detach' });
+  if (process.argv.includes('--devtools')) {
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
+  }
 
   mainWindow.on('closed', () => {
     mainWindow = null;
