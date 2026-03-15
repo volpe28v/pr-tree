@@ -1,5 +1,7 @@
 import { GitHubPr, GitHubReview, GitHubFile } from './types';
 
+const MAX_CACHE_ENTRIES = 200;
+
 export class GitHubClient {
   private token: string;
   private owner: string;
@@ -32,11 +34,10 @@ export class GitHubClient {
 
     const enriched = await Promise.all(
       prs.map(async (pr) => {
-        const [status, files, reviews, detail] = await Promise.all([
+        const [status, files, reviews] = await Promise.all([
           this.combinedStatus(pr.head.sha),
           this.getRequest<GitHubFile[]>(this.url(`/pulls/${pr.number}/files`)),
           this.getRequest<GitHubReview[]>(this.url(`/pulls/${pr.number}/reviews`)),
-          this.getRequest<GitHubPr>(this.url(`/pulls/${pr.number}`)),
         ]);
 
         return {
@@ -44,7 +45,7 @@ export class GitHubClient {
           status,
           files: files || [],
           reviews: reviews || [],
-          mergeable: detail?.mergeable ?? null,
+          mergeable: pr.mergeable ?? null,
         };
       })
     );
@@ -53,33 +54,42 @@ export class GitHubClient {
   }
 
   private async combinedStatus(sha: string): Promise<string> {
-    const [statusResponse, checkSuitesResponse] = await Promise.all([
+    const [statusResponse, checkRunsResponse] = await Promise.all([
       this.getRequest<{
         state: string;
         total_count: number;
       }>(this.url(`/commits/${sha}/status`)),
       this.getRequest<{
-        check_suites: { status: string; conclusion: string | null; app: { name: string } }[];
-      }>(this.url(`/commits/${sha}/check-suites`)),
+        check_runs: { id: number; name: string; status: string; conclusion: string | null }[];
+      }>(this.url(`/commits/${sha}/check-runs`)),
     ]);
 
     const statusState = statusResponse?.state || 'success';
     const hasStatuses = (statusResponse?.total_count || 0) > 0;
 
-    const checkSuites = checkSuitesResponse?.check_suites || [];
+    // 同じ name の check run が複数ある場合、最新（id が最大）のみを評価
+    const allRuns = checkRunsResponse?.check_runs || [];
+    const latestByName = new Map<string, (typeof allRuns)[number]>();
+    for (const cr of allRuns) {
+      const existing = latestByName.get(cr.name);
+      if (!existing || cr.id > existing.id) {
+        latestByName.set(cr.name, cr);
+      }
+    }
+    const checkRuns = [...latestByName.values()];
 
-    const hasSuiteFailure = checkSuites.some(
-      (cs) => cs.conclusion === 'failure'
+    const hasRunFailure = checkRuns.some(
+      (cr) => cr.conclusion === 'failure'
     );
-    // queued のまま放置されている suite は無視し、in_progress のみ pending とする
-    const hasSuitePending = checkSuites.some(
-      (cs) => cs.status === 'in_progress'
+    // queued のまま放置されている run は無視し、in_progress のみ pending とする
+    const hasRunPending = checkRuns.some(
+      (cr) => cr.status === 'in_progress'
     );
 
     // in_progress があれば再実行中なので pending を優先
-    if (hasSuitePending || (hasStatuses && statusState === 'pending')) {
+    if (hasRunPending || (hasStatuses && statusState === 'pending')) {
       return 'pending';
-    } else if ((hasStatuses && statusState === 'failure') || hasSuiteFailure) {
+    } else if ((hasStatuses && statusState === 'failure') || hasRunFailure) {
       return 'failure';
     } else {
       return 'success';
@@ -113,6 +123,20 @@ export class GitHubClient {
       const data = await res.json();
 
       if (etag) {
+        // アクセス順維持: 既存キーは末尾に移動
+        if (this.etags.has(url)) {
+          this.etags.delete(url);
+        }
+        // サイズ上限チェック: 超過時に古いエントリ（先頭半分）を削除
+        if (this.etags.size >= MAX_CACHE_ENTRIES) {
+          const deleteCount = Math.floor(MAX_CACHE_ENTRIES / 2);
+          let count = 0;
+          for (const key of this.etags.keys()) {
+            if (count >= deleteCount) break;
+            this.etags.delete(key);
+            count++;
+          }
+        }
         this.etags.set(url, { etag, data });
       }
 

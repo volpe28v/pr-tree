@@ -21,6 +21,7 @@ let settingsRepos: RepoEntry[] = [];
 let hideApproved = false;
 let lastFetchedNodes: PrNode[] = [];
 let knownPrNumbers: Set<number> = new Set();
+let lastRenderFingerprint = '';
 
 function loadConfig(): AppConfig | null {
   const raw = localStorage.getItem(CONFIG_KEY);
@@ -247,7 +248,14 @@ async function fetchAndRender(els: ReturnType<typeof getElements>): Promise<void
     applyFiltersAndBuildTree();
     notifyNewPrs(currentNodes);
 
-    renderCurrentView(els);
+    // データ未変更ならレンダリングをスキップ
+    const fingerprint = currentNodes
+      .map((n) => `${n.params.number}:${n.params.updatedAt}:${n.params.status}:${n.params.mergeable}`)
+      .join('|');
+    if (fingerprint !== lastRenderFingerprint) {
+      lastRenderFingerprint = fingerprint;
+      renderCurrentView(els);
+    }
     els.lastUpdated.textContent = `Updated: ${new Date().toLocaleTimeString()}`;
   } catch (err) {
     els.treeContainer.innerHTML = `<div class="error">Error: ${err}</div>`;
@@ -307,7 +315,8 @@ function setupTooltip(root: HTMLElement): void {
 
 function startPolling(els: ReturnType<typeof getElements>, intervalSec: number): void {
   if (pollingTimer) clearInterval(pollingTimer);
-  pollingTimer = setInterval(() => fetchAndRender(els), intervalSec * 1000);
+  const safeSec = Math.max(intervalSec, 30);
+  pollingTimer = setInterval(() => fetchAndRender(els), safeSec * 1000);
 }
 
 function init(): void {

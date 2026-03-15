@@ -1,14 +1,16 @@
 import { PrNode, createPrNode } from './pr-builder';
 
 export function buildTree(items: PrNode[]): PrNode[] {
+  // head → node の Map で O(1) ルックアップ
+  const headMap = new Map<string, PrNode>();
+  for (const item of items) {
+    headMap.set(item.params.head, item);
+  }
+
   // 親子関係を構築
   for (const item of items) {
-    const parent = items.find(
-      (p) =>
-        p.params.head === item.params.base &&
-        !hasKeyInParentBases(p, item.params.head!)
-    );
-    if (parent) {
+    const parent = item.params.base ? headMap.get(item.params.base) : undefined;
+    if (parent && !hasKeyInParentBases(parent, item.params.head!)) {
       parent.children.push(item);
       item.parent = parent;
     }

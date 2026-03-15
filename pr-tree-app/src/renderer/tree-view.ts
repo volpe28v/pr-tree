@@ -20,6 +20,7 @@ export function renderGrouped(
   container.innerHTML = '';
 
   const allPrs = flattenPrs(trees);
+  const nonTrivialSet = buildNonTrivialTreeSet(trees);
 
   const myPrs = allPrs.filter((n) => n.params.user === username);
   let reviewPrs = allPrs.filter(
@@ -35,10 +36,10 @@ export function renderGrouped(
   }
 
   if (myPrs.length > 0) {
-    renderSection(container, '📝 My PRs', myPrs, trees, onShowTree, selectedNumber);
+    renderSection(container, '📝 My PRs', myPrs, trees, nonTrivialSet, onShowTree, selectedNumber);
   }
   if (reviewPrs.length > 0) {
-    renderSection(container, '👀 Review Requested', reviewPrs, trees, onShowTree, selectedNumber);
+    renderSection(container, '👀 Review Requested', reviewPrs, trees, nonTrivialSet, onShowTree, selectedNumber);
   }
   if (myPrs.length === 0 && reviewPrs.length === 0) {
     const empty = document.createElement('div');
@@ -59,6 +60,7 @@ export function renderCompact(
   container.innerHTML = '';
 
   const allPrs = flattenPrs(trees);
+  const nonTrivialSet = buildNonTrivialTreeSet(trees);
 
   const myPrs = allPrs.filter((n) => n.params.user === username);
   let reviewPrs = allPrs.filter(
@@ -73,10 +75,10 @@ export function renderCompact(
   }
 
   if (myPrs.length > 0) {
-    renderCompactSection(container, '📝 My PRs', myPrs, trees, onShowTree, selectedNumber);
+    renderCompactSection(container, '📝 My PRs', myPrs, trees, nonTrivialSet, onShowTree, selectedNumber);
   }
   if (reviewPrs.length > 0) {
-    renderCompactSection(container, '👀 Review Requested', reviewPrs, trees, onShowTree, selectedNumber);
+    renderCompactSection(container, '👀 Review Requested', reviewPrs, trees, nonTrivialSet, onShowTree, selectedNumber);
   }
   if (myPrs.length === 0 && reviewPrs.length === 0) {
     const empty = document.createElement('div');
@@ -101,21 +103,31 @@ export function renderSubTree(container: HTMLElement, root: PrNode, highlightNum
   }
 }
 
-function flattenPrs(nodes: PrNode[]): PrNode[] {
-  const result: PrNode[] = [];
-  for (const node of nodes) {
-    if (node.params.number != null) {
-      result.push(node);
-    }
-    result.push(...flattenPrs(node.children));
+let flattenCache: { trees: PrNode[]; result: PrNode[] } | null = null;
+
+function flattenPrs(trees: PrNode[]): PrNode[] {
+  if (flattenCache && flattenCache.trees === trees) {
+    return flattenCache.result;
   }
+  const result: PrNode[] = [];
+  collectPrs(trees, result);
   // updatedAt 降順（新しい順）
   result.sort((a, b) => {
     const ta = a.params.updatedAt || '';
     const tb = b.params.updatedAt || '';
     return tb.localeCompare(ta);
   });
+  flattenCache = { trees, result };
   return result;
+}
+
+function collectPrs(nodes: PrNode[], result: PrNode[]): void {
+  for (const node of nodes) {
+    if (node.params.number != null) {
+      result.push(node);
+    }
+    collectPrs(node.children, result);
+  }
 }
 
 function findTreeRoot(trees: PrNode[], prNode: PrNode): PrNode | null {
@@ -130,20 +142,29 @@ function containsNode(tree: PrNode, target: PrNode): boolean {
   return tree.children.some((child) => containsNode(child, target));
 }
 
-function isInNonTrivialTree(trees: PrNode[], node: PrNode): boolean {
-  // 子 PR がある（他の PR が自分のブランチをベースにしている）
-  if (node.children.length > 0) return true;
-
-  // 親が PR（仮想ルートノードでなく実 PR）= スタックされた PR
-  const root = findTreeRoot(trees, node);
-  if (root) {
-    // root は仮想ノード（number なし）。node の直接の親が root でなければ、
-    // 親は実 PR = スタック関係
-    const parent = findDirectParent(root, node);
-    if (parent && parent.params.number != null) return true;
+function buildNonTrivialTreeSet(trees: PrNode[]): Set<number> {
+  const result = new Set<number>();
+  for (const root of trees) {
+    collectNonTrivial(root, root, result);
   }
+  return result;
+}
 
-  return false;
+function collectNonTrivial(node: PrNode, root: PrNode, result: Set<number>): void {
+  if (node.params.number != null) {
+    // 子 PR がある
+    if (node.children.length > 0) {
+      result.add(node.params.number);
+    }
+    // 親が実 PR（仮想ルートノードでなく）= スタックされた PR
+    const parent = findDirectParent(root, node);
+    if (parent && parent.params.number != null) {
+      result.add(node.params.number);
+    }
+  }
+  for (const child of node.children) {
+    collectNonTrivial(child, root, result);
+  }
 }
 
 function extractRelatedSubtree(root: PrNode, target: PrNode): PrNode | null {
@@ -200,6 +221,7 @@ function renderSection(
   title: string,
   prs: PrNode[],
   trees: PrNode[],
+  nonTrivialSet: Set<number>,
   onShowTree?: (rootNode: PrNode, highlightNumber: number) => void,
   selectedNumber?: number | null
 ): void {
@@ -209,7 +231,7 @@ function renderSection(
   container.appendChild(header);
 
   for (const pr of prs) {
-    renderPrCard(container, pr, trees, onShowTree, selectedNumber);
+    renderPrCard(container, pr, trees, nonTrivialSet, onShowTree, selectedNumber);
   }
 
   addSpacer(container);
@@ -219,6 +241,7 @@ function renderPrCard(
   container: HTMLElement,
   item: PrNode,
   trees: PrNode[],
+  nonTrivialSet: Set<number>,
   onShowTree?: (rootNode: PrNode, highlightNumber: number) => void,
   selectedNumber?: number | null
 ): void {
@@ -227,7 +250,7 @@ function renderPrCard(
   const approveText = formatApprovers(p.approved, p.approvers);
   const conflictIcon = p.mergeable === false ? '💥' : '';
   const reviewerText = formatReviewers(p.reviewers);
-  const showTreeBadge = isInNonTrivialTree(trees, item);
+  const showTreeBadge = p.number != null && nonTrivialSet.has(p.number);
 
   const isSelected = selectedNumber != null && p.number === selectedNumber;
   const card = document.createElement('div');
@@ -357,6 +380,7 @@ function renderCompactSection(
   title: string,
   prs: PrNode[],
   trees: PrNode[],
+  nonTrivialSet: Set<number>,
   onShowTree?: (rootNode: PrNode, highlightNumber: number) => void,
   selectedNumber?: number | null
 ): void {
@@ -366,7 +390,7 @@ function renderCompactSection(
   container.appendChild(header);
 
   for (const pr of prs) {
-    renderCompactRow(container, pr, trees, onShowTree, selectedNumber);
+    renderCompactRow(container, pr, trees, nonTrivialSet, onShowTree, selectedNumber);
   }
 }
 
@@ -374,13 +398,14 @@ function renderCompactRow(
   container: HTMLElement,
   item: PrNode,
   trees: PrNode[],
+  nonTrivialSet: Set<number>,
   onShowTree?: (rootNode: PrNode, highlightNumber: number) => void,
   selectedNumber?: number | null
 ): void {
   const p = item.params;
   const statusIcon = statusEmoji(p.status);
   const approveText = formatApproversCompact(p.approved, p.approvers);
-  const showTreeBadge = isInNonTrivialTree(trees, item);
+  const showTreeBadge = p.number != null && nonTrivialSet.has(p.number);
   const isSelected = selectedNumber != null && p.number === selectedNumber;
 
   const row = document.createElement('div');
@@ -467,7 +492,10 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 function esc(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
