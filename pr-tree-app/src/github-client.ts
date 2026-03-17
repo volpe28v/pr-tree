@@ -29,8 +29,8 @@ export class GitHubClient {
   }
 
   async pullRequests(): Promise<GitHubPr[]> {
-    const prs = await this.getRequest<GitHubPr[]>(this.url('/pulls'));
-    if (!prs) return [];
+    const prs = await this.getAllPages<GitHubPr>(this.url('/pulls?per_page=100'));
+    if (prs.length === 0) return [];
 
     const enriched = await Promise.all(
       prs.map(async (pr) => {
@@ -94,6 +94,50 @@ export class GitHubClient {
     } else {
       return 'success';
     }
+  }
+
+  private async getAllPages<T>(firstUrl: string): Promise<T[]> {
+    let url: string | null = firstUrl;
+    const result: T[] = [];
+    while (url) {
+      const headers: Record<string, string> = {
+        Authorization: `token ${this.token}`,
+        Accept: 'application/vnd.github.v3+json',
+      };
+
+      const cached = this.etags.get(url);
+      if (cached) {
+        headers['If-None-Match'] = cached.etag;
+      }
+
+      try {
+        const res: Response = await fetch(url, { headers });
+
+        if (res.status === 304 && cached) {
+          result.push(...(cached.data as T[]));
+        } else if (res.ok) {
+          const etag = res.headers.get('etag');
+          const data = (await res.json()) as T[];
+          if (etag) {
+            if (this.etags.has(url)) this.etags.delete(url);
+            this.etags.set(url, { etag, data });
+          }
+          result.push(...data);
+        } else {
+          console.error(`GitHub API error: ${res.status} ${res.statusText} for ${url}`);
+          break;
+        }
+
+        // Link ヘッダーから次ページ URL を取得
+        const link: string | null = res.headers.get('link');
+        const next: RegExpMatchArray | null | undefined = link?.match(/<([^>]+)>;\s*rel="next"/);
+        url = next ? next[1] : null;
+      } catch (err) {
+        console.error(`Request failed: ${url}`, err);
+        break;
+      }
+    }
+    return result;
   }
 
   private async getRequest<T>(url: string): Promise<T | null> {
