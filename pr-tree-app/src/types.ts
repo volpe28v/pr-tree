@@ -52,6 +52,50 @@ export interface GitHubCheckRun {
   completed_at: string | null;
 }
 
+// GraphQL response types
+export interface GraphQLPrNode {
+  number: number;
+  title: string;
+  author: { login: string } | null;
+  reviewRequests: {
+    nodes: { requestedReviewer: { login: string } | null }[];
+  };
+  baseRefName: string;
+  headRefName: string;
+  headRefOid: string;
+  url: string;
+  updatedAt: string;
+  isDraft: boolean;
+  mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
+  commits: {
+    nodes: {
+      commit: {
+        statusCheckRollup: {
+          state: string;
+        } | null;
+      };
+    }[];
+  };
+  reviews: {
+    nodes: { state: string; author: { login: string } | null }[];
+  };
+}
+
+export interface GraphQLResponse {
+  rateLimit: {
+    cost: number;
+    remaining: number;
+    limit: number;
+    resetAt: string;
+  };
+  repository: {
+    pullRequests: {
+      pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      nodes: GraphQLPrNode[];
+    };
+  };
+}
+
 export interface RepoEntry {
   owner: string;
   repo: string;

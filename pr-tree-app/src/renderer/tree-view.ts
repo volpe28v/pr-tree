@@ -416,9 +416,12 @@ function renderCompactRow(
     ? `<span class="tree-badge" data-tree-pr="${p.number}" title="Show tree">🌳</span>`
     : '';
 
+  const conflictIcon = p.mergeable === false ? '💥' : '';
+
   row.innerHTML =
     `<span class="status-badge">${statusIcon}</span>` +
     `<span class="compact-approve">${approveText}</span>` +
+    (conflictIcon ? `<span class="compact-conflict">${conflictIcon}</span>` : '') +
     `<span class="compact-number">#${p.number}</span>` +
     `<span class="compact-title" data-tooltip="${esc(p.title || '')}">${esc(p.title || '')}</span>` +
     `<span class="compact-user">@${esc(p.user || '')}</span>` +

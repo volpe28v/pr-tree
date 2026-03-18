@@ -1,12 +1,61 @@
-import { GitHubPr, GitHubReview, GitHubFile } from './types';
+import {
+  GitHubPr,
+  GitHubReview,
+  GitHubFile,
+  GraphQLPrNode,
+  GraphQLResponse,
+} from './types';
 
-const MAX_CACHE_ENTRIES = 200;
+const PR_QUERY = `
+query($owner: String!, $repo: String!, $cursor: String) {
+  rateLimit {
+    cost
+    remaining
+    limit
+    resetAt
+  }
+  repository(owner: $owner, name: $repo) {
+    pullRequests(states: [OPEN], first: 100, after: $cursor, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        number title
+        author { login }
+        reviewRequests(first: 20) {
+          nodes { requestedReviewer { ... on User { login } } }
+        }
+        baseRefName headRefName headRefOid
+        url updatedAt isDraft mergeable
+        commits(last: 1) {
+          nodes {
+            commit {
+              statusCheckRollup {
+                state
+              }
+            }
+          }
+        }
+        reviews(first: 100) {
+          nodes { state author { login } }
+        }
+      }
+    }
+  }
+}
+`;
+
+export interface RateLimitInfo {
+  cost: number;
+  remaining: number;
+  limit: number;
+  resetAt: string;
+}
 
 export class GitHubClient {
   private token: string;
   private owner: string;
   private repo: string;
-  private etags: Map<string, { etag: string; data: unknown }> = new Map();
+  apiCallCount = 0;
+  rateLimitInfo: RateLimitInfo | null = null;
 
   constructor(token: string, owner: string, repo: string) {
     this.token = token;
@@ -28,170 +77,138 @@ export class GitHubClient {
     }
   }
 
-  async pullRequests(): Promise<GitHubPr[]> {
-    const prs = await this.getAllPages<GitHubPr>(this.url('/pulls?per_page=100'));
-    if (prs.length === 0) return [];
+  async pullRequests(
+    username?: string
+  ): Promise<
+    (GitHubPr & {
+      status: string;
+      files: GitHubFile[];
+      reviews: GitHubReview[];
+      mergeable: boolean | null;
+    })[]
+  > {
+    const allNodes = await this.fetchAllPrs();
+    if (allNodes.length === 0) return [];
 
-    const enriched = await Promise.all(
-      prs.map(async (pr) => {
-        const [status, files, reviews] = await Promise.all([
-          this.combinedStatus(pr.head.sha),
-          this.getRequest<GitHubFile[]>(this.url(`/pulls/${pr.number}/files`)),
-          this.getRequest<GitHubReview[]>(this.url(`/pulls/${pr.number}/reviews`)),
-        ]);
+    const transformed = allNodes.map((node) => this.transformPr(node));
 
-        return {
-          ...pr,
-          status,
-          files: files || [],
-          reviews: reviews || [],
-          mergeable: pr.mergeable ?? null,
-        };
-      })
+    if (!username) return transformed;
+
+    return transformed.filter(
+      (pr) =>
+        pr.user.login === username ||
+        pr.requested_reviewers.some((r) => r.login === username)
     );
-
-    return enriched;
   }
 
-  private async combinedStatus(sha: string): Promise<string> {
-    const [statusResponse, checkRunsResponse] = await Promise.all([
-      this.getRequest<{
-        state: string;
-        total_count: number;
-      }>(this.url(`/commits/${sha}/status`)),
-      this.getRequest<{
-        check_runs: { id: number; name: string; status: string; conclusion: string | null }[];
-      }>(this.url(`/commits/${sha}/check-runs`)),
-    ]);
+  private async fetchAllPrs(): Promise<GraphQLPrNode[]> {
+    const allNodes: GraphQLPrNode[] = [];
+    let cursor: string | null = null;
 
-    const statusState = statusResponse?.state || 'success';
-    const hasStatuses = (statusResponse?.total_count || 0) > 0;
-
-    // 同じ name の check run が複数ある場合、最新（id が最大）のみを評価
-    const allRuns = checkRunsResponse?.check_runs || [];
-    const latestByName = new Map<string, (typeof allRuns)[number]>();
-    for (const cr of allRuns) {
-      const existing = latestByName.get(cr.name);
-      if (!existing || cr.id > existing.id) {
-        latestByName.set(cr.name, cr);
-      }
-    }
-    const checkRuns = [...latestByName.values()];
-
-    const hasRunFailure = checkRuns.some(
-      (cr) => cr.conclusion === 'failure'
-    );
-    // queued のまま放置されている run は無視し、in_progress のみ pending とする
-    const hasRunPending = checkRuns.some(
-      (cr) => cr.status === 'in_progress'
-    );
-
-    // in_progress があれば再実行中なので pending を優先
-    if (hasRunPending || (hasStatuses && statusState === 'pending')) {
-      return 'pending';
-    } else if ((hasStatuses && statusState === 'failure') || hasRunFailure) {
-      return 'failure';
-    } else {
-      return 'success';
-    }
-  }
-
-  private async getAllPages<T>(firstUrl: string): Promise<T[]> {
-    let url: string | null = firstUrl;
-    const result: T[] = [];
-    while (url) {
-      const headers: Record<string, string> = {
-        Authorization: `token ${this.token}`,
-        Accept: 'application/vnd.github.v3+json',
-      };
-
-      const cached = this.etags.get(url);
-      if (cached) {
-        headers['If-None-Match'] = cached.etag;
-      }
-
-      try {
-        const res: Response = await fetch(url, { headers });
-
-        if (res.status === 304 && cached) {
-          result.push(...(cached.data as T[]));
-        } else if (res.ok) {
-          const etag = res.headers.get('etag');
-          const data = (await res.json()) as T[];
-          if (etag) {
-            if (this.etags.has(url)) this.etags.delete(url);
-            this.etags.set(url, { etag, data });
-          }
-          result.push(...data);
-        } else {
-          console.error(`GitHub API error: ${res.status} ${res.statusText} for ${url}`);
-          break;
+    do {
+      const data: GraphQLResponse = await this.graphql<GraphQLResponse>(
+        PR_QUERY,
+        {
+          owner: this.owner,
+          repo: this.repo,
+          cursor,
         }
+      );
 
-        // Link ヘッダーから次ページ URL を取得
-        const link: string | null = res.headers.get('link');
-        const next: RegExpMatchArray | null | undefined = link?.match(/<([^>]+)>;\s*rel="next"/);
-        url = next ? next[1] : null;
-      } catch (err) {
-        console.error(`Request failed: ${url}`, err);
-        break;
-      }
-    }
-    return result;
+      this.rateLimitInfo = data.rateLimit;
+
+      const prs: GraphQLResponse['repository']['pullRequests'] =
+        data.repository.pullRequests;
+      allNodes.push(...prs.nodes);
+
+      cursor = prs.pageInfo.hasNextPage
+        ? prs.pageInfo.endCursor
+        : null;
+    } while (cursor);
+
+    return allNodes;
   }
 
-  private async getRequest<T>(url: string): Promise<T | null> {
-    const headers: Record<string, string> = {
-      Authorization: `token ${this.token}`,
-      Accept: 'application/vnd.github.v3+json',
+  private transformPr(gqlPr: GraphQLPrNode): GitHubPr & {
+    status: string;
+    files: GitHubFile[];
+    reviews: GitHubReview[];
+    mergeable: boolean | null;
+  } {
+    const mergeableMap: Record<string, boolean | null> = {
+      MERGEABLE: true,
+      CONFLICTING: false,
+      UNKNOWN: null,
     };
 
-    const cached = this.etags.get(url);
-    if (cached) {
-      headers['If-None-Match'] = cached.etag;
-    }
-
-    try {
-      const res = await fetch(url, { headers });
-
-      if (res.status === 304 && cached) {
-        return cached.data as T;
-      }
-
-      if (!res.ok) {
-        console.error(`GitHub API error: ${res.status} ${res.statusText} for ${url}`);
-        return null;
-      }
-
-      const etag = res.headers.get('etag');
-      const data = await res.json();
-
-      if (etag) {
-        // アクセス順維持: 既存キーは末尾に移動
-        if (this.etags.has(url)) {
-          this.etags.delete(url);
-        }
-        // サイズ上限チェック: 超過時に古いエントリ（先頭半分）を削除
-        if (this.etags.size >= MAX_CACHE_ENTRIES) {
-          const deleteCount = Math.floor(MAX_CACHE_ENTRIES / 2);
-          let count = 0;
-          for (const key of this.etags.keys()) {
-            if (count >= deleteCount) break;
-            this.etags.delete(key);
-            count++;
-          }
-        }
-        this.etags.set(url, { etag, data });
-      }
-
-      return data as T;
-    } catch (err) {
-      console.error(`Request failed: ${url}`, err);
-      return null;
-    }
+    return {
+      number: gqlPr.number,
+      title: gqlPr.title,
+      user: { login: gqlPr.author?.login ?? '' },
+      requested_reviewers: gqlPr.reviewRequests.nodes
+        .filter((n) => n.requestedReviewer !== null)
+        .map((n) => ({ login: n.requestedReviewer!.login })),
+      base: { ref: gqlPr.baseRefName },
+      head: { ref: gqlPr.headRefName, sha: gqlPr.headRefOid },
+      html_url: gqlPr.url,
+      updated_at: gqlPr.updatedAt,
+      draft: gqlPr.isDraft,
+      status: this.computeStatus(gqlPr),
+      files: [],
+      reviews: gqlPr.reviews.nodes
+        .filter((r) => r.author !== null)
+        .map((r) => ({ state: r.state, user: { login: r.author!.login } })),
+      mergeable: mergeableMap[gqlPr.mergeable] ?? null,
+    };
   }
 
-  private url(path: string): string {
-    return `https://api.github.com/repos/${this.owner}/${this.repo}${path}`;
+  private computeStatus(gqlPr: GraphQLPrNode): string {
+    const rollup =
+      gqlPr.commits.nodes[0]?.commit?.statusCheckRollup ?? null;
+    if (!rollup) return 'success';
+
+    // statusCheckRollup.state は GitHub が全 check/status を集約した結果
+    // SUCCESS, PENDING, FAILURE, ERROR, EXPECTED のいずれか
+    const state = rollup.state.toUpperCase();
+    if (state === 'PENDING' || state === 'EXPECTED') {
+      return 'pending';
+    } else if (state === 'FAILURE' || state === 'ERROR') {
+      return 'failure';
+    }
+    return 'success';
+  }
+
+  private async graphql<T>(
+    query: string,
+    variables: Record<string, unknown>
+  ): Promise<T> {
+    this.apiCallCount++;
+    const res = await fetch('https://api.github.com/graphql', {
+      method: 'POST',
+      headers: {
+        Authorization: `bearer ${this.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(
+        `GraphQL API error: ${res.status} ${res.statusText}\n${body}`
+      );
+    }
+    const json = (await res.json()) as {
+      data?: T;
+      errors?: { message: string }[];
+    };
+    if (json.errors) {
+      throw new Error(
+        `GraphQL errors: ${json.errors.map((e) => e.message).join(', ')}`
+      );
+    }
+    if (!json.data) {
+      throw new Error('GraphQL response has no data');
+    }
+    return json.data;
   }
 }

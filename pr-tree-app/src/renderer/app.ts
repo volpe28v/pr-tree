@@ -1,4 +1,4 @@
-import { GitHubClient } from '../github-client';
+import { GitHubClient, RateLimitInfo } from '../github-client';
 import { buildPrNodes, filterKeyword, filterCiPass, filterNoApproved, PrNode } from '../pr-builder';
 import { buildTree } from '../tree-builder';
 import { renderTree, renderGrouped, renderCompact, renderSubTree, findTreeRoot, extractRelatedSubtree } from './tree-view';
@@ -237,12 +237,17 @@ async function fetchAndRender(els: ReturnType<typeof getElements>): Promise<void
   els.lastUpdated.textContent = 'Loading...';
 
   try {
+    // API 呼び出しカウントをリセット
+    for (const c of clients) c.client.apiCallCount = 0;
+
     const results = await Promise.all(
       clients.map(async ({ client, repoFullName }) => {
-        const prs = await client.pullRequests();
+        const prs = await client.pullRequests(currentConfig?.username);
         return buildPrNodes(prs as never[], repoFullName);
       })
     );
+
+    const totalApiCalls = clients.reduce((sum, c) => sum + c.client.apiCallCount, 0);
 
     lastFetchedNodes = results.flat();
     applyFiltersAndBuildTree();
@@ -256,7 +261,11 @@ async function fetchAndRender(els: ReturnType<typeof getElements>): Promise<void
       lastRenderFingerprint = fingerprint;
       renderCurrentView(els);
     }
-    els.lastUpdated.textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+    const lastRateLimit = clients.map((c) => c.client.rateLimitInfo).find((r) => r !== null);
+    const rateLimitText = lastRateLimit
+      ? `  Cost: ${lastRateLimit.cost}  Remaining: ${lastRateLimit.remaining}/${lastRateLimit.limit}`
+      : '';
+    els.lastUpdated.textContent = `Updated: ${new Date().toLocaleTimeString()}  (API: ${totalApiCalls}${rateLimitText})`;
   } catch (err) {
     els.treeContainer.innerHTML = `<div class="error">Error: ${err}</div>`;
   }
