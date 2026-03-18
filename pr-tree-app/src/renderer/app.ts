@@ -287,7 +287,7 @@ function setupTooltip(root: HTMLElement): void {
       document.body.appendChild(tooltipEl);
     }
 
-    tooltipEl.textContent = text;
+    tooltipEl.innerHTML = text.replace(/\n/g, '<br>');
     tooltipEl.style.display = 'block';
 
     const rect = target.getBoundingClientRect();

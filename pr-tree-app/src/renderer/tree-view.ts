@@ -251,6 +251,7 @@ function renderPrCard(
   const conflictIcon = p.mergeable === false ? '💥' : '';
   const reviewerText = formatReviewers(p.reviewers);
   const showTreeBadge = p.number != null && nonTrivialSet.has(p.number);
+  const titleTooltip = buildTitleTooltip(p.title, p.lastCommenter, p.lastCommentedAt);
 
   const isSelected = selectedNumber != null && p.number === selectedNumber;
   const card = document.createElement('div');
@@ -264,7 +265,7 @@ function renderPrCard(
   card.innerHTML =
     `<div class="pr-card-line1">` +
     `<span class="status-badge">${statusIcon}</span> ${approveText}${conflictIcon ? ' ' + conflictIcon : ''} ` +
-    `<span class="pr-number">#${p.number}</span> <span class="pr-title" data-tooltip="${esc(p.title || '')}">${esc(p.title || '')}</span>` +
+    `<span class="pr-number">#${p.number}</span> <span class="pr-title" data-tooltip="${titleTooltip}">${esc(p.title || '')}</span>` +
     treeBadgeHtml +
     `</div>` +
     `<div class="pr-card-line2">` +
@@ -276,6 +277,7 @@ function renderPrCard(
     `<span class="pr-user">@${esc(p.user || '')}</span>` +
     (p.draft ? ' <span class="pr-draft-badge">DRAFT</span>' : '') +
     (reviewerText ? `  <span class="pr-reviewer">${reviewerText}</span>` : '') +
+    formatCommentBadge(p.commentCount, p.lastCommenter) +
     (p.updatedAt ? `  <span class="pr-updated">${formatRelativeTime(p.updatedAt)}</span>` : '') +
     `</div>`;
 
@@ -423,9 +425,10 @@ function renderCompactRow(
     `<span class="compact-approve">${approveText}</span>` +
     (conflictIcon ? `<span class="compact-conflict">${conflictIcon}</span>` : '') +
     `<span class="compact-number">#${p.number}</span>` +
-    `<span class="compact-title" data-tooltip="${esc(p.title || '')}">${esc(p.title || '')}</span>` +
+    `<span class="compact-title" data-tooltip="${buildTitleTooltip(p.title, p.lastCommenter, p.lastCommentedAt)}">${esc(p.title || '')}</span>` +
     `<span class="compact-user">@${esc(p.user || '')}</span>` +
     (p.draft ? '<span class="pr-draft-badge">DRAFT</span>' : '') +
+    formatCommentBadgeCompact(p.commentCount) +
     (p.updatedAt ? `<span class="compact-time">${formatRelativeTime(p.updatedAt)}</span>` : '') +
     treeBadgeHtml;
 
@@ -473,6 +476,26 @@ function formatApprovers(approved?: boolean, approvers?: string[]): string {
   const rest = approvers.length - 1;
   const names = rest > 0 ? `${first} +${rest}` : first;
   return `<span class="pr-approver">✅ ${names}</span>`;
+}
+
+function formatCommentBadge(count?: number, lastCommenter?: string): string {
+  if (!count || count === 0) return '';
+  const who = lastCommenter ? ` @${esc(lastCommenter)}` : '';
+  return `  <span class="pr-comment-badge">💬${count}${who}</span>`;
+}
+
+function formatCommentBadgeCompact(count?: number): string {
+  if (!count || count === 0) return '';
+  return `  <span class="pr-comment-badge">💬${count}</span>`;
+}
+
+function buildTitleTooltip(title?: string, lastCommenter?: string, lastCommentedAt?: string): string {
+  let tooltip = esc(title || '');
+  if (lastCommenter) {
+    const time = lastCommentedAt ? ` (${formatRelativeTime(lastCommentedAt)})` : '';
+    tooltip += `\nLast comment: @${esc(lastCommenter)}${time}`;
+  }
+  return tooltip;
 }
 
 function formatReviewers(reviewers?: string[]): string {

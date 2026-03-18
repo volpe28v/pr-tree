@@ -15,6 +15,9 @@ export interface PrParams {
   repoFullName?: string;
   updatedAt?: string;
   draft?: boolean;
+  commentCount?: number;
+  lastCommenter?: string;
+  lastCommentedAt?: string;
 }
 
 export interface FileChange {
@@ -33,6 +36,9 @@ export interface GitHubPr {
   updated_at: string;
   draft: boolean;
   mergeable?: boolean | null;
+  commentCount?: number;
+  lastCommenter?: string;
+  lastCommentedAt?: string;
 }
 
 export interface GitHubReview {
@@ -77,7 +83,19 @@ export interface GraphQLPrNode {
     }[];
   };
   reviews: {
-    nodes: { state: string; author: { login: string } | null }[];
+    totalCount: number;
+    nodes: {
+      state: string;
+      author: { login: string } | null;
+      createdAt: string;
+    }[];
+  };
+  comments: {
+    totalCount: number;
+    nodes: {
+      author: { login: string } | null;
+      createdAt: string;
+    }[];
   };
 }
 

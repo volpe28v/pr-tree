@@ -31,6 +31,9 @@ export function buildPrNodes(
       repoFullName,
       updatedAt: pr.updated_at,
       draft: pr.draft,
+      commentCount: pr.commentCount,
+      lastCommenter: pr.lastCommenter,
+      lastCommentedAt: pr.lastCommentedAt,
     })
   );
 }

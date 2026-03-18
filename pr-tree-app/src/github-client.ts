@@ -35,7 +35,12 @@ query($owner: String!, $repo: String!, $cursor: String) {
           }
         }
         reviews(first: 100) {
-          nodes { state author { login } }
+          totalCount
+          nodes { state author { login } createdAt }
+        }
+        comments(last: 1) {
+          totalCount
+          nodes { author { login } createdAt }
         }
       }
     }
@@ -141,6 +146,31 @@ export class GitHubClient {
       UNKNOWN: null,
     };
 
+    // コメント総数（reviews + comments）と最終コメント者を算出
+    const commentCount =
+      gqlPr.reviews.totalCount + gqlPr.comments.totalCount;
+    const lastReview = gqlPr.reviews.nodes.length > 0
+      ? gqlPr.reviews.nodes[gqlPr.reviews.nodes.length - 1]
+      : null;
+    const lastComment = gqlPr.comments.nodes[0] ?? null;
+    let lastCommenter: string | undefined;
+    let lastCommentedAt: string | undefined;
+    if (lastReview && lastComment) {
+      if (lastReview.createdAt >= lastComment.createdAt) {
+        lastCommenter = lastReview.author?.login;
+        lastCommentedAt = lastReview.createdAt;
+      } else {
+        lastCommenter = lastComment.author?.login;
+        lastCommentedAt = lastComment.createdAt;
+      }
+    } else if (lastReview) {
+      lastCommenter = lastReview.author?.login;
+      lastCommentedAt = lastReview.createdAt;
+    } else if (lastComment) {
+      lastCommenter = lastComment.author?.login;
+      lastCommentedAt = lastComment.createdAt;
+    }
+
     return {
       number: gqlPr.number,
       title: gqlPr.title,
@@ -159,6 +189,9 @@ export class GitHubClient {
         .filter((r) => r.author !== null)
         .map((r) => ({ state: r.state, user: { login: r.author!.login } })),
       mergeable: mergeableMap[gqlPr.mergeable] ?? null,
+      commentCount,
+      lastCommenter,
+      lastCommentedAt,
     };
   }
 
