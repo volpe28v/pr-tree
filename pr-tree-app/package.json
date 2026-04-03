@@ -12,7 +12,7 @@
   "devDependencies": {
     "@electron/packager": "^19.1.0",
     "@types/node": "^22.0.0",
-    "electron": "^33.0.0",
+    "electron": "^39.8.4",
     "esbuild": "^0.24.0",
     "typescript": "^5.7.0"
   }
