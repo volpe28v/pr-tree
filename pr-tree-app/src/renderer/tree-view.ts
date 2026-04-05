@@ -36,10 +36,10 @@ export function renderGrouped(
   }
 
   if (myPrs.length > 0) {
-    renderSection(container, '📝 My PRs', myPrs, trees, nonTrivialSet, onShowTree, selectedNumber);
+    renderSection(container, '📝 My PRs', myPrs, trees, nonTrivialSet, username, onShowTree, selectedNumber);
   }
   if (reviewPrs.length > 0) {
-    renderSection(container, '👀 Review Requested', reviewPrs, trees, nonTrivialSet, onShowTree, selectedNumber);
+    renderSection(container, '👀 Review Requested', reviewPrs, trees, nonTrivialSet, username, onShowTree, selectedNumber);
   }
   if (myPrs.length === 0 && reviewPrs.length === 0) {
     const empty = document.createElement('div');
@@ -75,10 +75,10 @@ export function renderCompact(
   }
 
   if (myPrs.length > 0) {
-    renderCompactSection(container, '📝 My PRs', myPrs, trees, nonTrivialSet, onShowTree, selectedNumber);
+    renderCompactSection(container, '📝 My PRs', myPrs, trees, nonTrivialSet, username, onShowTree, selectedNumber);
   }
   if (reviewPrs.length > 0) {
-    renderCompactSection(container, '👀 Review Requested', reviewPrs, trees, nonTrivialSet, onShowTree, selectedNumber);
+    renderCompactSection(container, '👀 Review Requested', reviewPrs, trees, nonTrivialSet, username, onShowTree, selectedNumber);
   }
   if (myPrs.length === 0 && reviewPrs.length === 0) {
     const empty = document.createElement('div');
@@ -222,6 +222,7 @@ function renderSection(
   prs: PrNode[],
   trees: PrNode[],
   nonTrivialSet: Set<number>,
+  username: string,
   onShowTree?: (rootNode: PrNode, highlightNumber: number) => void,
   selectedNumber?: number | null
 ): void {
@@ -231,7 +232,7 @@ function renderSection(
   container.appendChild(header);
 
   for (const pr of prs) {
-    renderPrCard(container, pr, trees, nonTrivialSet, onShowTree, selectedNumber);
+    renderPrCard(container, pr, trees, nonTrivialSet, username, onShowTree, selectedNumber);
   }
 
   addSpacer(container);
@@ -242,6 +243,7 @@ function renderPrCard(
   item: PrNode,
   trees: PrNode[],
   nonTrivialSet: Set<number>,
+  username: string,
   onShowTree?: (rootNode: PrNode, highlightNumber: number) => void,
   selectedNumber?: number | null
 ): void {
@@ -254,8 +256,9 @@ function renderPrCard(
   const titleTooltip = buildTitleTooltip(p.title, p.lastCommenter, p.lastCommentedAt);
 
   const isSelected = selectedNumber != null && p.number === selectedNumber;
+  const isMergeReady = isMergeReadyPr(p);
   const card = document.createElement('div');
-  card.className = 'pr-card' + (isSelected ? ' pr-highlight' : '');
+  card.className = 'pr-card' + (isSelected ? ' pr-highlight' : '') + (isMergeReady ? ' merge-ready' : '');
   card.dataset.url = p.url || '';
 
   const treeBadgeHtml = showTreeBadge
@@ -277,7 +280,7 @@ function renderPrCard(
     `<span class="pr-user">@${esc(p.user || '')}</span>` +
     (p.draft ? ' <span class="pr-draft-badge">DRAFT</span>' : '') +
     (reviewerText ? `  <span class="pr-reviewer">${reviewerText}</span>` : '') +
-    formatCommentBadge(p.commentCount, p.lastCommenter) +
+    formatCommentBadge(p.commentCount, p.lastCommenter, username) +
     (p.updatedAt ? `  <span class="pr-updated">${formatRelativeTime(p.updatedAt)}</span>` : '') +
     `</div>`;
 
@@ -383,6 +386,7 @@ function renderCompactSection(
   prs: PrNode[],
   trees: PrNode[],
   nonTrivialSet: Set<number>,
+  username: string,
   onShowTree?: (rootNode: PrNode, highlightNumber: number) => void,
   selectedNumber?: number | null
 ): void {
@@ -392,7 +396,7 @@ function renderCompactSection(
   container.appendChild(header);
 
   for (const pr of prs) {
-    renderCompactRow(container, pr, trees, nonTrivialSet, onShowTree, selectedNumber);
+    renderCompactRow(container, pr, trees, nonTrivialSet, username, onShowTree, selectedNumber);
   }
 }
 
@@ -401,6 +405,7 @@ function renderCompactRow(
   item: PrNode,
   trees: PrNode[],
   nonTrivialSet: Set<number>,
+  username: string,
   onShowTree?: (rootNode: PrNode, highlightNumber: number) => void,
   selectedNumber?: number | null
 ): void {
@@ -410,8 +415,9 @@ function renderCompactRow(
   const showTreeBadge = p.number != null && nonTrivialSet.has(p.number);
   const isSelected = selectedNumber != null && p.number === selectedNumber;
 
+  const isMergeReady = isMergeReadyPr(p);
   const row = document.createElement('div');
-  row.className = 'compact-row' + (isSelected ? ' pr-highlight' : '');
+  row.className = 'compact-row' + (isSelected ? ' pr-highlight' : '') + (isMergeReady ? ' merge-ready' : '');
   row.dataset.url = p.url || '';
 
   const treeBadgeHtml = showTreeBadge
@@ -428,7 +434,7 @@ function renderCompactRow(
     `<span class="compact-title" data-tooltip="${buildTitleTooltip(p.title, p.lastCommenter, p.lastCommentedAt)}">${esc(p.title || '')}</span>` +
     `<span class="compact-user">@${esc(p.user || '')}</span>` +
     (p.draft ? '<span class="pr-draft-badge">DRAFT</span>' : '') +
-    formatCommentBadgeCompact(p.commentCount) +
+    formatCommentBadgeCompact(p.commentCount, p.lastCommenter, username) +
     (p.updatedAt ? `<span class="compact-time">${formatRelativeTime(p.updatedAt)}</span>` : '') +
     treeBadgeHtml;
 
@@ -457,6 +463,10 @@ function formatApproversCompact(approved?: boolean, approvers?: string[]): strin
   return `<span class="pr-approver">✅${count > 1 ? count : ''}</span>`;
 }
 
+function isMergeReadyPr(p: PrNode['params']): boolean {
+  return p.status === 'success' && p.approved === true && p.mergeable !== false;
+}
+
 function statusEmoji(status?: string): string {
   switch (status) {
     case 'success':
@@ -478,15 +488,22 @@ function formatApprovers(approved?: boolean, approvers?: string[]): string {
   return `<span class="pr-approver">✅ ${names}</span>`;
 }
 
-function formatCommentBadge(count?: number, lastCommenter?: string): string {
-  if (!count || count === 0) return '';
-  const who = lastCommenter ? ` @${esc(lastCommenter)}` : '';
-  return `  <span class="pr-comment-badge">💬${count}${who}</span>`;
+function commentBadgeClass(lastCommenter?: string, username?: string): string {
+  if (!lastCommenter || !username) return 'pr-comment-badge';
+  return lastCommenter === username ? 'pr-comment-badge comment-mine' : 'pr-comment-badge comment-others';
 }
 
-function formatCommentBadgeCompact(count?: number): string {
+function formatCommentBadge(count?: number, lastCommenter?: string, username?: string): string {
   if (!count || count === 0) return '';
-  return `  <span class="pr-comment-badge">💬${count}</span>`;
+  const cls = commentBadgeClass(lastCommenter, username);
+  const who = lastCommenter ? ` @${esc(lastCommenter)}` : '';
+  return `  <span class="${cls}">💬${count}${who}</span>`;
+}
+
+function formatCommentBadgeCompact(count?: number, lastCommenter?: string, username?: string): string {
+  if (!count || count === 0) return '';
+  const cls = commentBadgeClass(lastCommenter, username);
+  return `  <span class="${cls}">💬${count}</span>`;
 }
 
 function buildTitleTooltip(title?: string, lastCommenter?: string, lastCommentedAt?: string): string {
