@@ -281,6 +281,7 @@ function renderPrCard(
     (p.draft ? ' <span class="pr-draft-badge">DRAFT</span>' : '') +
     (reviewerText ? `  <span class="pr-reviewer">${reviewerText}</span>` : '') +
     formatCommentBadge(p.commentCount, p.lastCommenter, username) +
+    formatChangedFiles(p.changedFiles) +
     (p.updatedAt ? `  <span class="pr-updated">${formatRelativeTime(p.updatedAt)}</span>` : '') +
     `</div>`;
 
@@ -435,6 +436,7 @@ function renderCompactRow(
     `<span class="compact-user">@${esc(p.user || '')}</span>` +
     (p.draft ? '<span class="pr-draft-badge">DRAFT</span>' : '') +
     formatCommentBadgeCompact(p.commentCount, p.lastCommenter, username) +
+    formatChangedFiles(p.changedFiles) +
     (p.updatedAt ? `<span class="compact-time">${formatRelativeTime(p.updatedAt)}</span>` : '') +
     treeBadgeHtml;
 
@@ -504,6 +506,11 @@ function formatCommentBadgeCompact(count?: number, lastCommenter?: string, usern
   if (!count || count === 0) return '';
   const cls = commentBadgeClass(lastCommenter, username);
   return `  <span class="${cls}">💬${count}</span>`;
+}
+
+function formatChangedFiles(changedFiles?: number): string {
+  if (!changedFiles || changedFiles === 0) return '';
+  return `  <span class="pr-changed-files">📁${changedFiles}</span>`;
 }
 
 function buildTitleTooltip(title?: string, lastCommenter?: string, lastCommentedAt?: string): string {

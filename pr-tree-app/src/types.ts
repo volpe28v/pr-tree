@@ -18,6 +18,7 @@ export interface PrParams {
   commentCount?: number;
   lastCommenter?: string;
   lastCommentedAt?: string;
+  changedFiles?: number;
 }
 
 export interface FileChange {
@@ -39,6 +40,7 @@ export interface GitHubPr {
   commentCount?: number;
   lastCommenter?: string;
   lastCommentedAt?: string;
+  changedFiles?: number;
 }
 
 export interface GitHubReview {
@@ -73,6 +75,7 @@ export interface GraphQLPrNode {
   updatedAt: string;
   isDraft: boolean;
   mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
+  changedFiles: number;
   commits: {
     nodes: {
       commit: {

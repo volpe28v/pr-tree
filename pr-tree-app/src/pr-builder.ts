@@ -34,6 +34,7 @@ export function buildPrNodes(
       commentCount: pr.commentCount,
       lastCommenter: pr.lastCommenter,
       lastCommentedAt: pr.lastCommentedAt,
+      changedFiles: pr.changedFiles,
     })
   );
 }

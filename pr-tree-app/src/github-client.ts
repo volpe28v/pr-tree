@@ -24,7 +24,7 @@ query($owner: String!, $repo: String!, $cursor: String) {
           nodes { requestedReviewer { ... on User { login } } }
         }
         baseRefName headRefName headRefOid
-        url updatedAt isDraft mergeable
+        url updatedAt isDraft mergeable changedFiles
         commits(last: 1) {
           nodes {
             commit {
@@ -192,6 +192,7 @@ export class GitHubClient {
       commentCount,
       lastCommenter,
       lastCommentedAt,
+      changedFiles: gqlPr.changedFiles,
     };
   }
 

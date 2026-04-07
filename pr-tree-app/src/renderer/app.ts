@@ -268,6 +268,8 @@ async function fetchAndRender(els: ReturnType<typeof getElements>): Promise<void
     els.lastUpdated.textContent = `Updated: ${new Date().toLocaleTimeString()}  (API: ${totalApiCalls}${rateLimitText})`;
   } catch (err) {
     els.treeContainer.innerHTML = `<div class="error">Error: ${err}</div>`;
+    els.lastUpdated.textContent = `Error: ${new Date().toLocaleTimeString()}`;
+    lastRenderFingerprint = '';
   }
 }
 

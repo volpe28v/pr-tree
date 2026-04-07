@@ -377,6 +377,11 @@ body {
   color: #666;
 }
 
+.pr-changed-files {
+  font-size: 11px;
+  color: #888;
+}
+
 /* Compact view */
 .compact-row {
   display: flex;
