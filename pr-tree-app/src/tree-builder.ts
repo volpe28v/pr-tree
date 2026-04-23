@@ -1,6 +1,12 @@
 import { PrNode, createPrNode } from './pr-builder';
 
 export function buildTree(items: PrNode[]): PrNode[] {
+  // 同じ PrNode を使い回すため、前回のツリー構築状態をリセット
+  for (const item of items) {
+    item.children = [];
+    item.parent = null;
+  }
+
   // head → node の Map で O(1) ルックアップ
   const headMap = new Map<string, PrNode>();
   for (const item of items) {
