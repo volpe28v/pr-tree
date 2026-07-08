@@ -231,8 +231,13 @@ function renderSection(
   header.textContent = title;
   container.appendChild(header);
 
-  for (const pr of prs) {
-    renderPrCard(container, pr, trees, nonTrivialSet, username, onShowTree, selectedNumber);
+  const groups = groupByRepo(prs);
+  for (const [repo, repoPrs] of groups) {
+    if (repoPrs.length === 0) continue;
+    appendRepoSeparator(container, repo);
+    for (const pr of repoPrs) {
+      renderPrCard(container, pr, trees, nonTrivialSet, username, onShowTree, selectedNumber);
+    }
   }
 
   addSpacer(container);
@@ -396,8 +401,13 @@ function renderCompactSection(
   header.textContent = title;
   container.appendChild(header);
 
-  for (const pr of prs) {
-    renderCompactRow(container, pr, trees, nonTrivialSet, username, onShowTree, selectedNumber);
+  const groups = groupByRepo(prs);
+  for (const [repo, repoPrs] of groups) {
+    if (repoPrs.length === 0) continue;
+    appendRepoSeparator(container, repo);
+    for (const pr of repoPrs) {
+      renderCompactRow(container, pr, trees, nonTrivialSet, username, onShowTree, selectedNumber);
+    }
   }
 }
 
@@ -463,6 +473,24 @@ function formatApproversCompact(approved?: boolean, approvers?: string[]): strin
   if (!approved || !approvers || approvers.length === 0) return '⬜';
   const count = approvers.length;
   return `<span class="pr-approver">✅${count > 1 ? count : ''}</span>`;
+}
+
+function groupByRepo(prs: PrNode[]): Map<string, PrNode[]> {
+  const groups = new Map<string, PrNode[]>();
+  for (const pr of prs) {
+    const repo = pr.params.repoFullName || '';
+    if (!groups.has(repo)) groups.set(repo, []);
+    groups.get(repo)!.push(pr);
+  }
+  return groups;
+}
+
+function appendRepoSeparator(container: HTMLElement, repo: string): void {
+  if (!repo) return;
+  const sep = document.createElement('div');
+  sep.className = 'repo-separator';
+  sep.textContent = repo;
+  container.appendChild(sep);
 }
 
 function isMergeReadyPr(p: PrNode['params']): boolean {

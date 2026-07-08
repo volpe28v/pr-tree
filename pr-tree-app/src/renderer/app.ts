@@ -267,8 +267,7 @@ async function fetchAndRender(els: ReturnType<typeof getElements>): Promise<void
       : '';
     els.lastUpdated.textContent = `Updated: ${new Date().toLocaleTimeString()}  (API: ${totalApiCalls}${rateLimitText})`;
   } catch (err) {
-    els.treeContainer.innerHTML = `<div class="error">Error: ${err}</div>`;
-    els.lastUpdated.textContent = `Error: ${new Date().toLocaleTimeString()}`;
+    els.lastUpdated.textContent = `⚠️ Error: ${new Date().toLocaleTimeString()} - ${err}`;
     lastRenderFingerprint = '';
   }
 }
@@ -461,6 +460,31 @@ function init(): void {
   els.treeContainer.addEventListener('click', handleUrlClick);
   els.treeDetailContent.addEventListener('click', handleUrlClick);
 
+  // 右クリックでメニューを表示し、「Copy URL」で PR の URL をコピー（codino/regista へのレビュー依頼用）
+  const handleUrlContextMenu = (e: Event) => {
+    const target = e.target as HTMLElement;
+    const clickable = target.closest('[data-url]') as HTMLElement | null;
+    if (clickable?.dataset.url) {
+      e.preventDefault();
+      const me = e as MouseEvent;
+      showUrlContextMenu(me.clientX, me.clientY, clickable.dataset.url);
+    }
+  };
+  els.treeContainer.addEventListener('contextmenu', handleUrlContextMenu);
+  els.treeDetailContent.addEventListener('contextmenu', handleUrlContextMenu);
+
+  // メニュー外を押した・スクロール・Escape で閉じる（メニュー内の押下は無視）
+  document.addEventListener('mousedown', (e) => {
+    if (contextMenuEl && !contextMenuEl.contains(e.target as Node)) {
+      hideContextMenu();
+    }
+  });
+  document.addEventListener('scroll', hideContextMenu, true);
+  window.addEventListener('resize', hideContextMenu);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') hideContextMenu();
+  });
+
   // カスタムツールチップ
   setupTooltip(document.body);
 
@@ -475,11 +499,81 @@ function init(): void {
   }
 }
 
+// トースト通知（数秒で自動的に消える）
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+function showToast(message: string): void {
+  let toast = document.getElementById('toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast!.classList.remove('show');
+  }, 2000);
+}
+
+// URL をクリップボードにコピー（IPC 優先、失敗時は navigator.clipboard にフォールバック）
+function copyUrlToClipboard(url: string): void {
+  showToast('URL copied');
+  try {
+    if (window.electronAPI?.copyToClipboard) {
+      window.electronAPI.copyToClipboard(url);
+      return;
+    }
+    console.warn('[pr-tree] electronAPI.copyToClipboard unavailable, falling back');
+  } catch (err) {
+    console.error('[pr-tree] IPC clipboard failed', err);
+  }
+  navigator.clipboard?.writeText(url).catch((err) => {
+    console.error('[pr-tree] navigator.clipboard failed', err);
+  });
+}
+
+// カスタム右クリックメニュー
+let contextMenuEl: HTMLElement | null = null;
+function hideContextMenu(): void {
+  if (contextMenuEl) {
+    contextMenuEl.remove();
+    contextMenuEl = null;
+  }
+}
+function showUrlContextMenu(x: number, y: number, url: string): void {
+  hideContextMenu();
+  const menu = document.createElement('div');
+  menu.className = 'context-menu';
+
+  const item = document.createElement('div');
+  item.className = 'context-menu-item';
+  item.textContent = 'Copy URL';
+  item.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    copyUrlToClipboard(url);
+    hideContextMenu();
+  });
+  menu.appendChild(item);
+
+  document.body.appendChild(menu);
+
+  // 画面外にはみ出さないよう位置を調整
+  const rect = menu.getBoundingClientRect();
+  const px = Math.min(x, window.innerWidth - rect.width - 4);
+  const py = Math.min(y, window.innerHeight - rect.height - 4);
+  menu.style.left = `${Math.max(0, px)}px`;
+  menu.style.top = `${Math.max(0, py)}px`;
+  contextMenuEl = menu;
+}
+
 // electronAPI の型定義
 declare global {
   interface Window {
     electronAPI: {
       openExternal: (url: string) => void;
+      copyToClipboard: (text: string) => void;
     };
   }
 }
