@@ -1,7 +1,7 @@
 import { PrNode, createPrNode } from './pr-builder';
 
 export function buildTree(items: PrNode[]): PrNode[] {
-  // 同じノードオブジェクトに対して再実行されても重複しないよう、親子関係をリセットする
+  // 同じ PrNode を使い回すため、前回のツリー構築状態（親子関係）をリセットする
   // （呼び出し側が lastFetchedNodes を使い回すため buildTree は冪等である必要がある）
   for (const item of items) {
     item.children = [];
