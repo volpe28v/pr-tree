@@ -1,7 +1,7 @@
 import { GitHubClient, RateLimitInfo } from '../github-client';
 import { buildPrNodes, filterKeyword, filterCiPass, filterNoApproved, PrNode } from '../pr-builder';
 import { buildTree } from '../tree-builder';
-import { renderTree, renderGrouped, renderCompact, renderSubTree, findTreeRoot, extractRelatedSubtree } from './tree-view';
+import { renderTree, renderGrouped, renderCompact, renderSubTree, findTreeRoot, extractRelatedSubtree, setCollapsed } from './tree-view';
 import { AppConfig, RepoEntry } from '../types';
 
 const CONFIG_KEY = 'pr-tree-config';
@@ -467,7 +467,7 @@ function init(): void {
     if (clickable?.dataset.url) {
       e.preventDefault();
       const me = e as MouseEvent;
-      showUrlContextMenu(me.clientX, me.clientY, clickable.dataset.url);
+      showUrlContextMenu(me.clientX, me.clientY, clickable);
     }
   };
   els.treeContainer.addEventListener('contextmenu', handleUrlContextMenu);
@@ -516,19 +516,19 @@ function showToast(message: string): void {
   }, 2000);
 }
 
-// URL をクリップボードにコピー（IPC 優先、失敗時は navigator.clipboard にフォールバック）
-function copyUrlToClipboard(url: string): void {
-  showToast('URL copied');
+// テキストをクリップボードにコピー（IPC 優先、失敗時は navigator.clipboard にフォールバック）
+function copyToClipboard(text: string, toastMsg: string): void {
+  showToast(toastMsg);
   try {
     if (window.electronAPI?.copyToClipboard) {
-      window.electronAPI.copyToClipboard(url);
+      window.electronAPI.copyToClipboard(text);
       return;
     }
     console.warn('[pr-tree] electronAPI.copyToClipboard unavailable, falling back');
   } catch (err) {
     console.error('[pr-tree] IPC clipboard failed', err);
   }
-  navigator.clipboard?.writeText(url).catch((err) => {
+  navigator.clipboard?.writeText(text).catch((err) => {
     console.error('[pr-tree] navigator.clipboard failed', err);
   });
 }
@@ -541,21 +541,45 @@ function hideContextMenu(): void {
     contextMenuEl = null;
   }
 }
-function showUrlContextMenu(x: number, y: number, url: string): void {
+function addMenuItem(menu: HTMLElement, label: string, onClick: () => void): void {
+  const item = document.createElement('div');
+  item.className = 'context-menu-item';
+  item.textContent = label;
+  item.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onClick();
+    hideContextMenu();
+  });
+  menu.appendChild(item);
+}
+
+function showUrlContextMenu(x: number, y: number, target: HTMLElement): void {
   hideContextMenu();
   const menu = document.createElement('div');
   menu.className = 'context-menu';
 
-  const item = document.createElement('div');
-  item.className = 'context-menu-item';
-  item.textContent = 'Copy URL';
-  item.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    copyUrlToClipboard(url);
-    hideContextMenu();
-  });
-  menu.appendChild(item);
+  const url = target.dataset.url;
+  if (url) {
+    addMenuItem(menu, 'Copy URL', () => copyToClipboard(url, 'URL copied'));
+  }
+
+  const branchEl = target.closest('[data-branch]') as HTMLElement | null;
+  const branch = branchEl?.dataset.branch;
+  if (branch) {
+    addMenuItem(menu, 'Copy branch', () => copyToClipboard(branch, 'Branch copied'));
+  }
+
+  // 詳細カード（My PRs）は最小化/展開を切り替え可能
+  const card = target.closest('.pr-detail-card') as HTMLElement | null;
+  const prNumber = card?.dataset.prNumber ? Number(card.dataset.prNumber) : null;
+  if (card && prNumber != null) {
+    const label = card.classList.contains('collapsed') ? '展開' : '最小化';
+    addMenuItem(menu, label, () => {
+      const nowCollapsed = card.classList.toggle('collapsed');
+      setCollapsed(prNumber, nowCollapsed);
+    });
+  }
 
   document.body.appendChild(menu);
 

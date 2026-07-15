@@ -85,6 +85,11 @@ export interface GraphQLPrNode {
       };
     }[];
   };
+  approvedReviews: {
+    nodes: {
+      author: { login: string } | null;
+    }[];
+  };
   reviews: {
     totalCount: number;
     nodes: {

@@ -2,6 +2,25 @@ import { PrNode } from '../pr-builder';
 
 const DEFAULT_BRANCHES = ['main', 'master', 'develop', 'development'];
 
+// 手動で最小化した PR 番号を localStorage に記憶する（放置 PR を畳んで目立たせない）
+const COLLAPSED_KEY = 'pr-tree-collapsed';
+
+function getCollapsedSet(): Set<number> {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_KEY);
+    return raw ? new Set(JSON.parse(raw) as number[]) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+export function setCollapsed(num: number, collapsed: boolean): void {
+  const set = getCollapsedSet();
+  if (collapsed) set.add(num);
+  else set.delete(num);
+  localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...set]));
+}
+
 export function renderTree(container: HTMLElement, roots: PrNode[]): void {
   container.innerHTML = '';
   renderNodes(container, roots, '');
@@ -23,6 +42,8 @@ export function renderGrouped(
   const nonTrivialSet = buildNonTrivialTreeSet(trees);
 
   const myPrs = allPrs.filter((n) => n.params.user === username);
+  // 工程順に並べ替え（開発中を上、マージ可能を下）。同工程内は既存の更新時刻降順を維持（安定ソート）
+  myPrs.sort((a, b) => stageSortKey(a.params) - stageSortKey(b.params));
   let reviewPrs = allPrs.filter(
     (n) =>
       n.params.user !== username &&
@@ -35,11 +56,12 @@ export function renderGrouped(
     reviewPrs = reviewPrs.filter((n) => !n.params.approved);
   }
 
+  // My PRs は詳細カード（案A）、Review Requested は 1 行表示
   if (myPrs.length > 0) {
     renderSection(container, '📝 My PRs', myPrs, trees, nonTrivialSet, username, onShowTree, selectedNumber);
   }
   if (reviewPrs.length > 0) {
-    renderSection(container, '👀 Review Requested', reviewPrs, trees, nonTrivialSet, username, onShowTree, selectedNumber);
+    renderCompactSection(container, '👀 Review Requested', reviewPrs, trees, nonTrivialSet, username, onShowTree, selectedNumber);
   }
   if (myPrs.length === 0 && reviewPrs.length === 0) {
     const empty = document.createElement('div');
@@ -63,6 +85,8 @@ export function renderCompact(
   const nonTrivialSet = buildNonTrivialTreeSet(trees);
 
   const myPrs = allPrs.filter((n) => n.params.user === username);
+  // 工程順に並べ替え（開発中を上、マージ可能を下）。同工程内は既存の更新時刻降順を維持（安定ソート）
+  myPrs.sort((a, b) => stageSortKey(a.params) - stageSortKey(b.params));
   let reviewPrs = allPrs.filter(
     (n) =>
       n.params.user !== username &&
@@ -253,42 +277,41 @@ function renderPrCard(
   selectedNumber?: number | null
 ): void {
   const p = item.params;
-  const statusIcon = statusEmoji(p.status);
-  const approveText = formatApprovers(p.approved, p.approvers);
-  const conflictIcon = p.mergeable === false ? '💥' : '';
-  const reviewerText = formatReviewers(p.reviewers);
+  const stage = computeStage(p);
   const showTreeBadge = p.number != null && nonTrivialSet.has(p.number);
-  const titleTooltip = buildTitleTooltip(p.title, p.lastCommenter, p.lastCommentedAt);
+  // ホバー時はタイトルのみ表示（最終コメントはテーブルに出ているため）
+  const titleTooltip = esc(p.title || '');
 
   const isSelected = selectedNumber != null && p.number === selectedNumber;
   const isMergeReady = isMergeReadyPr(p);
+  const isCollapsed = p.number != null && getCollapsedSet().has(p.number);
   const card = document.createElement('div');
-  card.className = 'pr-card' + (isSelected ? ' pr-highlight' : '') + (isMergeReady ? ' merge-ready' : '');
+  card.className =
+    'pr-card pr-detail-card ' + stage.cls +
+    (isSelected ? ' pr-highlight' : '') + (isMergeReady ? ' merge-ready' : '') +
+    (isCollapsed ? ' collapsed' : '');
   card.dataset.url = p.url || '';
+  if (p.head) card.dataset.branch = p.head;
+  // 右クリックメニューから最小化トグルできるよう PR 番号を保持
+  if (p.number != null) card.dataset.prNumber = String(p.number);
 
   const treeBadgeHtml = showTreeBadge
     ? ` <span class="tree-badge" data-tree-pr="${p.number}" title="Show tree">🌳</span>`
     : '';
 
+  // CI・コンフリクトはタイトル行に記号で押し込めて縦幅を節約（更新時刻は最終コメントと重複するため省く）
+  const conflictIcon = p.mergeable === false ? ' <span class="pr-conflict-icon">💥</span>' : '';
+
   card.innerHTML =
-    `<div class="pr-card-line1">` +
-    `<span class="status-badge">${statusIcon}</span> ${approveText}${conflictIcon ? ' ' + conflictIcon : ''} ` +
-    `<span class="pr-number">#${p.number}</span> <span class="pr-title" data-tooltip="${titleTooltip}">${esc(p.title || '')}</span>` +
+    `<div class="pr-detail-head">` +
+    `<span class="status-badge" title="CI: ${esc(p.status || 'unknown')}">${statusEmoji(p.status)}</span>` +
+    `<span class="pr-number">#${p.number}</span> ` +
+    `<span class="pr-title" data-tooltip="${titleTooltip}">${esc(p.title || '')}</span>` +
+    conflictIcon +
     treeBadgeHtml +
     `</div>` +
-    `<div class="pr-card-line2">` +
-    (p.repoFullName ? `<span class="pr-repo">${esc(p.repoFullName)}</span> ` : '') +
-    `<span class="branch-name">[${esc(p.head)}]</span>` +
-    ` ← <span class="branch-name-only">[${esc(p.base || '')}]</span>` +
-    `</div>` +
-    `<div class="pr-card-line3">` +
-    `<span class="pr-user">@${esc(p.user || '')}</span>` +
-    (p.draft ? ' <span class="pr-draft-badge">DRAFT</span>' : '') +
-    (reviewerText ? `  <span class="pr-reviewer">${reviewerText}</span>` : '') +
-    formatCommentBadge(p.commentCount, p.lastCommenter, username) +
-    formatChangedFiles(p.changedFiles) +
-    (p.updatedAt ? `  <span class="pr-updated">${formatRelativeTime(p.updatedAt)}</span>` : '') +
-    `</div>`;
+    buildStepper(p) +
+    buildDetailTable(p, username);
 
   if (showTreeBadge && onShowTree) {
     card.querySelector('.tree-badge')?.addEventListener('click', (e) => {
@@ -357,6 +380,7 @@ function renderItem(
   const wrapper = document.createElement('div');
   wrapper.className = 'pr-line' + (isHighlighted ? ' pr-highlight' : '');
   wrapper.dataset.url = p.url || '';
+  if (p.head) wrapper.dataset.branch = p.head;
 
   wrapper.innerHTML =
     `<div class="tree-node">` +
@@ -430,6 +454,7 @@ function renderCompactRow(
   const row = document.createElement('div');
   row.className = 'compact-row' + (isSelected ? ' pr-highlight' : '') + (isMergeReady ? ' merge-ready' : '');
   row.dataset.url = p.url || '';
+  if (p.head) row.dataset.branch = p.head;
 
   const treeBadgeHtml = showTreeBadge
     ? `<span class="tree-badge" data-tree-pr="${p.number}" title="Show tree">🌳</span>`
@@ -471,8 +496,13 @@ function renderCompactRow(
 
 function formatApproversCompact(approved?: boolean, approvers?: string[]): string {
   if (!approved || !approvers || approvers.length === 0) return '⬜';
-  const count = approvers.length;
-  return `<span class="pr-approver">✅${count > 1 ? count : ''}</span>`;
+  return `<span class="pr-approver">${keycapNumber(approvers.length)}</span>`;
+}
+
+// approve 人数をキーキャップ絵文字（1️⃣〜🔟）で表す。10 超はほぼ無いので 🔟 に丸める
+function keycapNumber(n: number): string {
+  if (n >= 1 && n <= 9) return `${n}️⃣`;
+  return '🔟';
 }
 
 function groupByRepo(prs: PrNode[]): Map<string, PrNode[]> {
@@ -495,6 +525,139 @@ function appendRepoSeparator(container: HTMLElement, repo: string): void {
 
 function isMergeReadyPr(p: PrNode['params']): boolean {
   return p.status === 'success' && p.approved === true && p.mergeable !== false;
+}
+
+interface Stage {
+  key: string;
+  icon: string;
+  label: string;
+  cls: string;
+  ball?: 'self' | 'other';
+}
+
+// PR の生データから「今どの工程か」を 1 つ計算する（優先度順に判定）。
+// My PRs 用なので p.user === 自分。ボールが self = 自分が対応する番。
+function computeStage(p: PrNode['params']): Stage {
+  const approved = p.approved === true;
+  const conflict = p.mergeable === false;
+  const ciFail = p.status === 'failure';
+  const pending = (p.reviewers || []).length;
+  const approvedCount = (p.approvers || []).length;
+  // github-actions は CI 通知 bot なので工程判定では無視（これが最終コメントでも「修正中」にしない）
+  const lastByOther =
+    !!p.lastCommenter && p.lastCommenter !== p.user && !isNoiseCommenter(p.lastCommenter);
+
+  if (p.draft) return { key: 'draft', icon: '🚧', label: '開発中', cls: 'stage-draft' };
+  if (isMergeReadyPr(p)) return { key: 'merge', icon: '🟢', label: 'マージ可能', cls: 'stage-merge', ball: 'self' };
+  if (conflict) return { key: 'conflict', icon: '💥', label: 'コンフリクト', cls: 'stage-alert', ball: 'self' };
+  if (ciFail) return { key: 'ci-fail', icon: '🛑', label: 'CI失敗', cls: 'stage-alert', ball: 'self' };
+  if (!approved && pending === 0 && approvedCount === 0) {
+    return { key: 'no-review', icon: '⚪', label: 'レビュー未依頼', cls: 'stage-idle' };
+  }
+  if (lastByOther && !approved) {
+    return { key: 'review-fix', icon: '🔴', label: 'レビュー修正中', cls: 'stage-fix', ball: 'self' };
+  }
+  return { key: 'review-wait', icon: '🟡', label: 'レビュー待ち', cls: 'stage-wait', ball: 'other' };
+}
+
+// 工程判定で無視する bot（CI 通知など。regista / devin 等の AI レビュー bot は対象外）
+function isNoiseCommenter(login?: string): boolean {
+  return !!login && login.startsWith('github-actions');
+}
+
+// 工程ごとの表示優先度（小さいほど上）。開発中を優先し、マージ可能は最下部。
+const STAGE_PRIORITY: Record<string, number> = {
+  draft: 0, // 開発中
+  'review-fix': 1, // レビュー修正中（自分の番）
+  conflict: 1,
+  'ci-fail': 1,
+  'no-review': 2, // レビュー未依頼
+  'review-wait': 3, // レビュー待ち（相手の番）
+  merge: 4, // マージ可能 → 下
+};
+
+function stageSortKey(p: PrNode['params']): number {
+  return STAGE_PRIORITY[computeStage(p).key] ?? 2;
+}
+
+// 進捗ステッパー（開発 → CI → 依頼 → 承認 → マージ）。左から順に埋まっていく。
+function buildStepper(p: PrNode['params']): string {
+  const approvedCount = (p.approvers || []).length;
+  const pending = (p.reviewers || []).length;
+  const total = approvedCount + pending;
+  const requested = total > 0;
+  const mergeReady = isMergeReadyPr(p);
+
+  const ciState =
+    p.status === 'success' ? 'done' :
+    p.status === 'failure' ? 'alert' :
+    p.status === 'pending' ? 'current' : 'pending';
+  const ciIcon = p.status === 'pending' ? '🔄' : undefined;
+
+  const approveState = mergeReady ? 'done' : approvedCount > 0 ? 'current' : 'pending';
+  const approveLabel = total > 0 ? `承認 ${approvedCount}/${total}` : '承認';
+
+  const steps: { label: string; state: string; icon?: string }[] = [
+    // Draft の間は開発ステップを未チェック（白四角）にする
+    { label: '開発', state: p.draft ? 'pending' : 'done', icon: p.draft ? '⬜' : undefined },
+    { label: 'CI', state: ciState, icon: ciIcon },
+    { label: '依頼', state: requested ? 'done' : 'pending' },
+    { label: approveLabel, state: approveState },
+    { label: 'マージ', state: mergeReady ? 'current' : 'pending' },
+  ];
+
+  const segs = steps
+    .map((s) => `<span class="step step-${s.state}">${s.icon || stepIcon(s.state)}${esc(s.label)}</span>`)
+    .join('<span class="step-sep">─</span>');
+  return `<div class="pr-stepper">${segs}</div>`;
+}
+
+function stepIcon(state: string): string {
+  switch (state) {
+    case 'done': return '✅';
+    case 'alert': return '🛑';
+    case 'current': return '🔵';
+    default: return '⚪';
+  }
+}
+
+// 詳細情報テーブル（案A）。工程判定の裏取りができるよう生データを併記する。
+function buildDetailTable(p: PrNode['params'], username: string): string {
+  const approvedCount = (p.approvers || []).length;
+  const pending = (p.reviewers || []).length;
+  const total = approvedCount + pending;
+
+  // レビュアー数と最終 Approve 者を 1 行に統合
+  let reviewerCell: string;
+  if (total > 0) {
+    reviewerCell = `${total}人 (承認${approvedCount} / 保留${pending})`;
+    if (approvedCount > 0) {
+      reviewerCell += ` · 最終 <span class="pr-approver">✅@${esc(p.approvers![approvedCount - 1])}</span>`;
+    }
+  } else {
+    reviewerCell = 'なし';
+  }
+
+  let lastCommentCell = '—';
+  if (p.lastCommenter) {
+    const cls = commentBadgeClass(p.lastCommenter, username);
+    const time = p.lastCommentedAt ? ` ${formatRelativeTime(p.lastCommentedAt)}` : '';
+    lastCommentCell = `<span class="${cls}">@${esc(p.lastCommenter)}</span>${time}`;
+  }
+
+  // 変更ファイル数はブランチ行の右端に寄せる
+  const filesRight = p.changedFiles ? `<span class="pr-changed-files">📁${p.changedFiles}</span>` : '';
+  const branchCell = `<div class="cell-split"><span>[${esc(p.head)}]</span>${filesRight}</div>`;
+
+  // CI・Conflict・更新はタイトル行に記号で表示するためテーブルからは省く
+  const rows: [string, string][] = [
+    ['ブランチ', branchCell],
+    ['レビュアー', reviewerCell],
+    ['最終コメント', lastCommentCell],
+  ];
+
+  const body = rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('');
+  return `<table class="pr-detail-table">${body}</table>`;
 }
 
 function statusEmoji(status?: string): string {
@@ -521,13 +684,6 @@ function formatApprovers(approved?: boolean, approvers?: string[]): string {
 function commentBadgeClass(lastCommenter?: string, username?: string): string {
   if (!lastCommenter || !username) return 'pr-comment-badge';
   return lastCommenter === username ? 'pr-comment-badge comment-mine' : 'pr-comment-badge comment-others';
-}
-
-function formatCommentBadge(count?: number, lastCommenter?: string, username?: string): string {
-  if (!count || count === 0) return '';
-  const cls = commentBadgeClass(lastCommenter, username);
-  const who = lastCommenter ? ` @${esc(lastCommenter)}` : '';
-  return `  <span class="${cls}">💬${count}${who}</span>`;
 }
 
 function formatCommentBadgeCompact(count?: number, lastCommenter?: string, username?: string): string {

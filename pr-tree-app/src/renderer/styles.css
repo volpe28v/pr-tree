@@ -316,12 +316,11 @@ body {
 }
 
 .pr-card.merge-ready {
-  animation: merge-glow 3s ease-in-out infinite;
-  border-left: 2px solid #3fb950;
+  background: rgba(63, 185, 80, 0.1);
+  border-left: 5px solid #3fb950;
 }
 
 .pr-card.merge-ready:hover {
-  animation: none;
   background: #1a3a2a;
 }
 
@@ -391,6 +390,143 @@ body {
   color: #888;
 }
 
+/* Detail card (案A: 工程バッジ + ステッパー + 情報テーブル) */
+.pr-detail-card {
+  padding: 8px 12px;
+  border-left: 5px solid transparent;
+}
+
+.pr-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.pr-detail-head .pr-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pr-detail-head .pr-updated,
+.pr-detail-head .status-badge,
+.pr-detail-head .pr-number {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.pr-conflict-icon {
+  flex: 0 0 auto;
+}
+
+.stage-badge {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* 1 行目の工程アイコン（絵文字のみのコンパクトなピル。タイトル幅を最大化） */
+.stage-dot {
+  flex: 0 0 auto;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.stage-draft { background: #3c3c3c; color: #bbbbbb; }
+.stage-idle { background: #333333; color: #999999; }
+.stage-wait { background: #3a3320; color: #e8c353; }
+.stage-fix { background: #4a2020; color: #f38ba8; }
+.stage-alert { background: #5a1e1e; color: #ff8080; }
+.stage-merge { background: #1a3a2a; color: #5edc9a; }
+
+/* 工程の色をカード左ボーダー＋背景の薄染めにも反映（選択時は除外してハイライトを優先） */
+.pr-detail-card.stage-wait:not(.pr-highlight) {
+  border-left-color: #d29922;
+  background: rgba(210, 153, 34, 0.05);
+}
+.pr-detail-card.stage-fix:not(.pr-highlight) {
+  border-left-color: #f38ba8;
+  background: rgba(241, 76, 76, 0.07);
+}
+.pr-detail-card.stage-alert:not(.pr-highlight) {
+  border-left-color: #f14c4c;
+  background: rgba(241, 76, 76, 0.09);
+}
+.pr-detail-card.stage-draft:not(.pr-highlight) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* 最小化表示 */
+.pr-detail-card.collapsed {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+.pr-detail-card.collapsed .pr-stepper,
+.pr-detail-card.collapsed .pr-detail-table {
+  display: none;
+}
+
+.pr-stepper {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  font-size: 11px;
+  margin: 6px 0;
+}
+
+.step {
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.step-done { color: #5edc9a; }
+.step-current { color: #5aa0e0; background: #1e2d3d; }
+.step-pending { color: #666666; }
+.step-alert { color: #ff8080; background: #3a1a1a; }
+.step-sep { color: #444444; }
+
+.pr-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.pr-detail-table th {
+  text-align: left;
+  color: #888888;
+  font-weight: normal;
+  padding: 1px 8px 1px 0;
+  width: 80px;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.pr-detail-table td {
+  color: #cccccc;
+  padding: 1px 0;
+}
+
+.cell-alert {
+  color: #ff8080;
+  font-weight: bold;
+}
+
+.cell-split {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 /* Compact view */
 .compact-row {
   display: flex;
@@ -414,12 +550,11 @@ body {
 }
 
 .compact-row.merge-ready {
-  animation: merge-glow 3s ease-in-out infinite;
+  background: rgba(63, 185, 80, 0.1);
   border-left: 2px solid #3fb950;
 }
 
 .compact-row.merge-ready:hover {
-  animation: none;
   background: #1a3a2a;
 }
 
@@ -530,15 +665,6 @@ body {
   font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
   font-size: 12px;
   line-height: 1.6;
-}
-
-@keyframes merge-glow {
-  0%, 100% {
-    background: rgba(63, 185, 80, 0.05);
-  }
-  50% {
-    background: rgba(63, 185, 80, 0.15);
-  }
 }
 
 /* トースト通知 */

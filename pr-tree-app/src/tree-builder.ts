@@ -1,6 +1,13 @@
 import { PrNode, createPrNode } from './pr-builder';
 
 export function buildTree(items: PrNode[]): PrNode[] {
+  // 同じノードオブジェクトに対して再実行されても重複しないよう、親子関係をリセットする
+  // （呼び出し側が lastFetchedNodes を使い回すため buildTree は冪等である必要がある）
+  for (const item of items) {
+    item.children = [];
+    item.parent = null;
+  }
+
   // head → node の Map で O(1) ルックアップ
   const headMap = new Map<string, PrNode>();
   for (const item of items) {

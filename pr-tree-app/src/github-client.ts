@@ -15,7 +15,7 @@ query($owner: String!, $repo: String!, $cursor: String) {
     resetAt
   }
   repository(owner: $owner, name: $repo) {
-    pullRequests(states: [OPEN], first: 100, after: $cursor, orderBy: {field: UPDATED_AT, direction: DESC}) {
+    pullRequests(states: [OPEN], first: 50, after: $cursor, orderBy: {field: UPDATED_AT, direction: DESC}) {
       pageInfo { hasNextPage endCursor }
       nodes {
         number title
@@ -34,7 +34,10 @@ query($owner: String!, $repo: String!, $cursor: String) {
             }
           }
         }
-        reviews(first: 100) {
+        approvedReviews: reviews(first: 100, states: [APPROVED]) {
+          nodes { author { login } }
+        }
+        reviews(last: 1) {
           totalCount
           nodes { state author { login } createdAt }
         }
@@ -185,9 +188,9 @@ export class GitHubClient {
       draft: gqlPr.isDraft,
       status: this.computeStatus(gqlPr),
       files: [],
-      reviews: gqlPr.reviews.nodes
+      reviews: gqlPr.approvedReviews.nodes
         .filter((r) => r.author !== null)
-        .map((r) => ({ state: r.state, user: { login: r.author!.login } })),
+        .map((r) => ({ state: 'APPROVED', user: { login: r.author!.login } })),
       mergeable: mergeableMap[gqlPr.mergeable] ?? null,
       commentCount,
       lastCommenter,
