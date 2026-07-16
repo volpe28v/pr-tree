@@ -9,6 +9,7 @@ export interface PrParams {
   status?: 'success' | 'failure' | 'pending';
   approved?: boolean;
   approvers?: string[];
+  changeRequesters?: string[];
   mergeable?: boolean | null;
   files?: FileChange[];
   currentBranch?: boolean;
@@ -37,6 +38,7 @@ export interface GitHubPr {
   updated_at: string;
   draft: boolean;
   mergeable?: boolean | null;
+  changeRequesters?: string[];
   commentCount?: number;
   lastCommenter?: string;
   lastCommentedAt?: string;
@@ -88,6 +90,13 @@ export interface GraphQLPrNode {
   approvedReviews: {
     nodes: {
       author: { login: string } | null;
+      createdAt: string;
+    }[];
+  };
+  changesRequestedReviews: {
+    nodes: {
+      author: { login: string } | null;
+      createdAt: string;
     }[];
   };
   reviews: {

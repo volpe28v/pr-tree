@@ -26,6 +26,7 @@ export function buildPrNodes(
       status: pr.status as PrParams['status'],
       approved: pr.reviews.some((r) => r.state === 'APPROVED'),
       approvers: [...new Set(pr.reviews.filter((r) => r.state === 'APPROVED').map((r) => r.user.login))],
+      changeRequesters: pr.changeRequesters,
       mergeable: pr.mergeable,
       files: pr.files.map((f) => ({ status: f.status, name: f.filename })),
       repoFullName,

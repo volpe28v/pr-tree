@@ -423,6 +423,12 @@ body {
   flex: 0 0 auto;
 }
 
+.pr-detail-author {
+  flex: 0 0 auto;
+  color: #888888;
+  font-size: 12px;
+}
+
 .stage-badge {
   flex: 0 0 auto;
   white-space: nowrap;

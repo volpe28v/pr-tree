@@ -2,23 +2,37 @@ import { PrNode } from '../pr-builder';
 
 const DEFAULT_BRANCHES = ['main', 'master', 'develop', 'development'];
 
-// 手動で最小化した PR 番号を localStorage に記憶する（放置 PR を畳んで目立たせない）
+// PR ごとの最小化状態を localStorage に記憶する。ユーザーが明示操作した PR のみ記録し、
+// 未操作の PR はセクションのデフォルト（My PRs=展開 / Review Requested=最小化）に従う。
 const COLLAPSED_KEY = 'pr-tree-collapsed';
 
-function getCollapsedSet(): Set<number> {
+function getCollapseMap(): Record<number, boolean> {
   try {
     const raw = localStorage.getItem(COLLAPSED_KEY);
-    return raw ? new Set(JSON.parse(raw) as number[]) : new Set();
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    // 後方互換: 旧形式（collapsed な番号の配列）は {num: true} に変換
+    if (Array.isArray(parsed)) {
+      const map: Record<number, boolean> = {};
+      for (const n of parsed as number[]) map[n] = true;
+      return map;
+    }
+    return parsed as Record<number, boolean>;
   } catch {
-    return new Set();
+    return {};
   }
 }
 
+// 明示操作があればそれを、なければセクションのデフォルトを返す
+function isPrCollapsed(num: number, defaultCollapsed: boolean): boolean {
+  const map = getCollapseMap();
+  return num in map ? map[num] : defaultCollapsed;
+}
+
 export function setCollapsed(num: number, collapsed: boolean): void {
-  const set = getCollapsedSet();
-  if (collapsed) set.add(num);
-  else set.delete(num);
-  localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...set]));
+  const map = getCollapseMap();
+  map[num] = collapsed;
+  localStorage.setItem(COLLAPSED_KEY, JSON.stringify(map));
 }
 
 export function renderTree(container: HTMLElement, roots: PrNode[]): void {
@@ -56,12 +70,12 @@ export function renderGrouped(
     reviewPrs = reviewPrs.filter((n) => !n.params.approved);
   }
 
-  // My PRs は詳細カード（案A）、Review Requested は 1 行表示
+  // My PRs は詳細カード（展開）、Review Requested も詳細カードだがデフォルト最小化（右クリックで展開）
   if (myPrs.length > 0) {
-    renderSection(container, '📝 My PRs', myPrs, trees, nonTrivialSet, username, onShowTree, selectedNumber);
+    renderSection(container, '📝 My PRs', myPrs, trees, nonTrivialSet, username, onShowTree, selectedNumber, false);
   }
   if (reviewPrs.length > 0) {
-    renderCompactSection(container, '👀 Review Requested', reviewPrs, trees, nonTrivialSet, username, onShowTree, selectedNumber);
+    renderSection(container, '👀 Review Requested', reviewPrs, trees, nonTrivialSet, username, onShowTree, selectedNumber, true);
   }
   if (myPrs.length === 0 && reviewPrs.length === 0) {
     const empty = document.createElement('div');
@@ -248,7 +262,8 @@ function renderSection(
   nonTrivialSet: Set<number>,
   username: string,
   onShowTree?: (rootNode: PrNode, highlightNumber: number) => void,
-  selectedNumber?: number | null
+  selectedNumber?: number | null,
+  defaultCollapsed = false
 ): void {
   const header = document.createElement('div');
   header.className = 'section-header';
@@ -260,7 +275,7 @@ function renderSection(
     if (repoPrs.length === 0) continue;
     appendRepoSeparator(container, repo);
     for (const pr of repoPrs) {
-      renderPrCard(container, pr, trees, nonTrivialSet, username, onShowTree, selectedNumber);
+      renderPrCard(container, pr, trees, nonTrivialSet, username, onShowTree, selectedNumber, defaultCollapsed);
     }
   }
 
@@ -274,7 +289,8 @@ function renderPrCard(
   nonTrivialSet: Set<number>,
   username: string,
   onShowTree?: (rootNode: PrNode, highlightNumber: number) => void,
-  selectedNumber?: number | null
+  selectedNumber?: number | null,
+  defaultCollapsed = false
 ): void {
   const p = item.params;
   const stage = computeStage(p);
@@ -284,7 +300,7 @@ function renderPrCard(
 
   const isSelected = selectedNumber != null && p.number === selectedNumber;
   const isMergeReady = isMergeReadyPr(p);
-  const isCollapsed = p.number != null && getCollapsedSet().has(p.number);
+  const isCollapsed = p.number != null && isPrCollapsed(p.number, defaultCollapsed);
   const card = document.createElement('div');
   card.className =
     'pr-card pr-detail-card ' + stage.cls +
@@ -301,6 +317,9 @@ function renderPrCard(
 
   // CI・コンフリクトはタイトル行に記号で押し込めて縦幅を節約（更新時刻は最終コメントと重複するため省く）
   const conflictIcon = p.mergeable === false ? ' <span class="pr-conflict-icon">💥</span>' : '';
+  // 他人の PR（Review Requested）は作者を右端に表示。最小化時も見えるようヘッダーに置く
+  const authorHtml =
+    p.user && p.user !== username ? `<span class="pr-detail-author">@${esc(p.user)}</span>` : '';
 
   card.innerHTML =
     `<div class="pr-detail-head">` +
@@ -309,6 +328,7 @@ function renderPrCard(
     `<span class="pr-title" data-tooltip="${titleTooltip}">${esc(p.title || '')}</span>` +
     conflictIcon +
     treeBadgeHtml +
+    authorHtml +
     `</div>` +
     buildStepper(p) +
     buildDetailTable(p, username);
@@ -543,26 +563,24 @@ function computeStage(p: PrNode['params']): Stage {
   const ciFail = p.status === 'failure';
   const pending = (p.reviewers || []).length;
   const approvedCount = (p.approvers || []).length;
-  // github-actions は CI 通知 bot なので工程判定では無視（これが最終コメントでも「修正中」にしない）
-  const lastByOther =
-    !!p.lastCommenter && p.lastCommenter !== p.user && !isNoiseCommenter(p.lastCommenter);
+  // 未解消の request changes。ただし修正後にレビューを再依頼済み（reviewers に戻っている）なら相手の番に戻す
+  const activeChangeRequesters = (p.changeRequesters || []).filter(
+    (u) => !(p.reviewers || []).includes(u)
+  );
 
   if (p.draft) return { key: 'draft', icon: '🚧', label: '開発中', cls: 'stage-draft' };
   if (isMergeReadyPr(p)) return { key: 'merge', icon: '🟢', label: 'マージ可能', cls: 'stage-merge', ball: 'self' };
   if (conflict) return { key: 'conflict', icon: '💥', label: 'コンフリクト', cls: 'stage-alert', ball: 'self' };
   if (ciFail) return { key: 'ci-fail', icon: '🛑', label: 'CI失敗', cls: 'stage-alert', ball: 'self' };
+  if (activeChangeRequesters.length > 0) {
+    return { key: 'review-fix', icon: '🔴', label: 'レビュー修正中', cls: 'stage-fix', ball: 'self' };
+  }
   if (!approved && pending === 0 && approvedCount === 0) {
     return { key: 'no-review', icon: '⚪', label: 'レビュー未依頼', cls: 'stage-idle' };
   }
-  if (lastByOther && !approved) {
-    return { key: 'review-fix', icon: '🔴', label: 'レビュー修正中', cls: 'stage-fix', ball: 'self' };
-  }
+  // レビュー依頼済みで request changes が無ければ、最終コメント主に関係なく「レビュー待ち」
+  // （higasshi-bot の「指摘なし」等が最後に残るケースを自分の番と誤判定しないため）
   return { key: 'review-wait', icon: '🟡', label: 'レビュー待ち', cls: 'stage-wait', ball: 'other' };
-}
-
-// 工程判定で無視する bot（CI 通知など。regista / devin 等の AI レビュー bot は対象外）
-function isNoiseCommenter(login?: string): boolean {
-  return !!login && login.startsWith('github-actions');
 }
 
 // 工程ごとの表示優先度（小さいほど上）。開発中を優先し、マージ可能は最下部。

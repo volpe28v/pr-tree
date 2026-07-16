@@ -35,7 +35,10 @@ query($owner: String!, $repo: String!, $cursor: String) {
           }
         }
         approvedReviews: reviews(first: 100, states: [APPROVED]) {
-          nodes { author { login } }
+          nodes { author { login } createdAt }
+        }
+        changesRequestedReviews: reviews(first: 100, states: [CHANGES_REQUESTED]) {
+          nodes { author { login } createdAt }
         }
         reviews(last: 1) {
           totalCount
@@ -149,6 +152,22 @@ export class GitHubClient {
       UNKNOWN: null,
     };
 
+    // 未解消の request changes を出したレビュアーを算出。
+    // CHANGES_REQUESTED の後に同じ人が APPROVED していれば解消済み。
+    // dismiss されたレビューは state が DISMISSED に変わるためクエリの絞り込みで自然に除外される。
+    const lastApprovedAt = new Map<string, string>();
+    for (const r of gqlPr.approvedReviews.nodes) {
+      if (!r.author) continue;
+      const prev = lastApprovedAt.get(r.author.login);
+      if (!prev || r.createdAt > prev) lastApprovedAt.set(r.author.login, r.createdAt);
+    }
+    const changeRequesters = new Set<string>();
+    for (const r of gqlPr.changesRequestedReviews.nodes) {
+      if (!r.author) continue;
+      const approvedAt = lastApprovedAt.get(r.author.login);
+      if (!approvedAt || r.createdAt > approvedAt) changeRequesters.add(r.author.login);
+    }
+
     // コメント総数（reviews + comments）と最終コメント者を算出
     const commentCount =
       gqlPr.reviews.totalCount + gqlPr.comments.totalCount;
@@ -192,6 +211,7 @@ export class GitHubClient {
         .filter((r) => r.author !== null)
         .map((r) => ({ state: 'APPROVED', user: { login: r.author!.login } })),
       mergeable: mergeableMap[gqlPr.mergeable] ?? null,
+      changeRequesters: [...changeRequesters],
       commentCount,
       lastCommenter,
       lastCommentedAt,
