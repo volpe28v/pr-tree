@@ -42,6 +42,11 @@ export function renderTree(container: HTMLElement, roots: PrNode[]): void {
 
 export { findTreeRoot, extractRelatedSubtree };
 
+// My PRs 判定: 自分が作者、または引き継ぎ等で assignees に自分が含まれる PR
+function isMinePr(p: PrNode['params'], username: string): boolean {
+  return p.user === username || (p.assignees || []).includes(username);
+}
+
 export function renderGrouped(
   container: HTMLElement,
   trees: PrNode[],
@@ -55,12 +60,12 @@ export function renderGrouped(
   const allPrs = flattenPrs(trees);
   const nonTrivialSet = buildNonTrivialTreeSet(trees);
 
-  const myPrs = allPrs.filter((n) => n.params.user === username);
+  const myPrs = allPrs.filter((n) => isMinePr(n.params, username));
   // 工程順に並べ替え（開発中を上、マージ可能を下）。同工程内は既存の更新時刻降順を維持（安定ソート）
   myPrs.sort((a, b) => stageSortKey(a.params) - stageSortKey(b.params));
   let reviewPrs = allPrs.filter(
     (n) =>
-      n.params.user !== username &&
+      !isMinePr(n.params, username) &&
       (n.params.reviewers || []).some((r) => r === username)
   );
 
@@ -98,12 +103,12 @@ export function renderCompact(
   const allPrs = flattenPrs(trees);
   const nonTrivialSet = buildNonTrivialTreeSet(trees);
 
-  const myPrs = allPrs.filter((n) => n.params.user === username);
+  const myPrs = allPrs.filter((n) => isMinePr(n.params, username));
   // 工程順に並べ替え（開発中を上、マージ可能を下）。同工程内は既存の更新時刻降順を維持（安定ソート）
   myPrs.sort((a, b) => stageSortKey(a.params) - stageSortKey(b.params));
   let reviewPrs = allPrs.filter(
     (n) =>
-      n.params.user !== username &&
+      !isMinePr(n.params, username) &&
       (n.params.reviewers || []).some((r) => r === username)
   );
 
@@ -323,7 +328,7 @@ function renderPrCard(
 
   card.innerHTML =
     `<div class="pr-detail-head">` +
-    `<span class="status-badge" title="CI: ${esc(p.status || 'unknown')}">${statusEmoji(p.status)}</span>` +
+    `<span class="status-badge" data-tooltip="${ciTooltip(p)}">${statusEmoji(p.status)}</span>` +
     `<span class="pr-number">#${p.number}</span> ` +
     `<span class="pr-title" data-tooltip="${titleTooltip}">${esc(p.title || '')}</span>` +
     conflictIcon +
@@ -405,7 +410,7 @@ function renderItem(
   wrapper.innerHTML =
     `<div class="tree-node">` +
     `<span class="tree-prefix">${esc(prefix + connector)}</span>` +
-    ` <span class="status-badge">${statusIcon}</span> ${approveText} ${conflictIcon}  ` +
+    ` <span class="status-badge" data-tooltip="${ciTooltip(p)}">${statusIcon}</span> ${approveText} ${conflictIcon}  ` +
     `<span class="${branchClass}">[${esc(p.head)}]</span>` +
     `</div>` +
     `<div class="tree-node">` +
@@ -483,7 +488,7 @@ function renderCompactRow(
   const conflictIcon = p.mergeable === false ? '💥' : '';
 
   row.innerHTML =
-    `<span class="status-badge">${statusIcon}</span>` +
+    `<span class="status-badge" data-tooltip="${ciTooltip(p)}">${statusIcon}</span>` +
     `<span class="compact-approve">${approveText}</span>` +
     (conflictIcon ? `<span class="compact-conflict">${conflictIcon}</span>` : '') +
     `<span class="compact-number">#${p.number}</span>` +
@@ -555,8 +560,29 @@ interface Stage {
   ball?: 'self' | 'other';
 }
 
+// コメントのみのレビュアーのうち、まだ再依頼していない人（再依頼済みなら「保留」に数える）
+function activeCommenters(p: PrNode['params']): string[] {
+  const pending = p.reviewers || [];
+  return (p.commenters || []).filter((u) => !pending.includes(u));
+}
+
+// GitHub の Reviewers 欄と同じ 4 区分の内訳。合計が Reviewers 欄の人数と一致する
+function reviewerBreakdown(p: PrNode['params']): {
+  approved: number;
+  changes: number;
+  commented: number;
+  pending: number;
+  total: number;
+} {
+  const pending = (p.reviewers || []).length;
+  const approved = (p.approvers || []).length;
+  const changes = (p.changeRequesters || []).filter((u) => !(p.reviewers || []).includes(u)).length;
+  const commented = activeCommenters(p).length;
+  return { approved, changes, commented, pending, total: approved + changes + commented + pending };
+}
+
 // PR の生データから「今どの工程か」を 1 つ計算する（優先度順に判定）。
-// My PRs 用なので p.user === 自分。ボールが self = 自分が対応する番。
+// My PRs 用（自分が作者 or assignee）。ボールが self = 自分が対応する番。
 function computeStage(p: PrNode['params']): Stage {
   const approved = p.approved === true;
   const conflict = p.mergeable === false;
@@ -576,6 +602,10 @@ function computeStage(p: PrNode['params']): Stage {
     return { key: 'review-fix', icon: '🔴', label: 'レビュー修正中', cls: 'stage-fix', ball: 'self' };
   }
   if (!approved && pending === 0 && approvedCount === 0) {
+    // 保留中のレビュアーがおらず、人のコメントレビューだけ付いている＝返答・修正して再依頼するのは自分の番
+    if (activeCommenters(p).length > 0) {
+      return { key: 'review-comment', icon: '🟠', label: 'コメント対応中', cls: 'stage-fix', ball: 'self' };
+    }
     return { key: 'no-review', icon: '⚪', label: 'レビュー未依頼', cls: 'stage-idle' };
   }
   // レビュー依頼済みで request changes が無ければ、最終コメント主に関係なく「レビュー待ち」
@@ -587,6 +617,7 @@ function computeStage(p: PrNode['params']): Stage {
 const STAGE_PRIORITY: Record<string, number> = {
   draft: 0, // 開発中
   'review-fix': 1, // レビュー修正中（自分の番）
+  'review-comment': 1, // コメント対応中（自分の番）
   conflict: 1,
   'ci-fail': 1,
   'no-review': 2, // レビュー未依頼
@@ -600,9 +631,7 @@ function stageSortKey(p: PrNode['params']): number {
 
 // 進捗ステッパー（開発 → CI → 依頼 → 承認 → マージ）。左から順に埋まっていく。
 function buildStepper(p: PrNode['params']): string {
-  const approvedCount = (p.approvers || []).length;
-  const pending = (p.reviewers || []).length;
-  const total = approvedCount + pending;
+  const { approved: approvedCount, total } = reviewerBreakdown(p);
   const requested = total > 0;
   const mergeReady = isMergeReadyPr(p);
 
@@ -641,14 +670,17 @@ function stepIcon(state: string): string {
 
 // 詳細情報テーブル（案A）。工程判定の裏取りができるよう生データを併記する。
 function buildDetailTable(p: PrNode['params'], username: string): string {
-  const approvedCount = (p.approvers || []).length;
-  const pending = (p.reviewers || []).length;
-  const total = approvedCount + pending;
+  const { approved: approvedCount, changes, commented, pending, total } = reviewerBreakdown(p);
 
-  // レビュアー数と最終 Approve 者を 1 行に統合
+  // レビュアー数と最終 Approve 者を 1 行に統合。
+  // 指摘（request changes）とコメントのみは「レビュー済みだが未承認」なので、いる時だけ承認と保留の間に挟む
   let reviewerCell: string;
   if (total > 0) {
-    reviewerCell = `${total}人 (承認${approvedCount} / 保留${pending})`;
+    const parts = [`承認${approvedCount}`];
+    if (changes > 0) parts.push(`<span class="pr-reviewer-changes">指摘${changes}</span>`);
+    if (commented > 0) parts.push(`<span class="pr-reviewer-commented">コメント${commented}</span>`);
+    parts.push(`保留${pending}`);
+    reviewerCell = `${total}人 (${parts.join(' / ')})`;
     if (approvedCount > 0) {
       reviewerCell += ` · 最終 <span class="pr-approver">✅@${esc(p.approvers![approvedCount - 1])}</span>`;
     }
@@ -673,6 +705,10 @@ function buildDetailTable(p: PrNode['params'], username: string): string {
     ['レビュアー', reviewerCell],
     ['最終コメント', lastCommentCell],
   ];
+  // CI が赤のときだけ原因（失敗したチェック名）を並べる。名前クリックでチェックの詳細ページを開く
+  if (p.status === 'failure') {
+    rows.push(['CI失敗', buildCiFailureCell(p.ciFailures)]);
+  }
 
   const body = rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('');
   return `<table class="pr-detail-table">${body}</table>`;
@@ -689,6 +725,31 @@ function statusEmoji(status?: string): string {
     default:
       return '⚪';
   }
+}
+
+// ステータス記号ホバー時の説明。赤のときは失敗したチェック名を 1 行ずつ並べる
+function ciTooltip(p: PrNode['params']): string {
+  const lines = [`CI: ${p.status || 'unknown'}`];
+  if (p.status === 'failure') {
+    const failures = p.ciFailures || [];
+    if (failures.length === 0) {
+      lines.push('（失敗チェックの詳細を取得できませんでした）');
+    }
+    for (const f of failures) lines.push(`🛑 ${f.name}`);
+  }
+  return esc(lines.join('\n'));
+}
+
+function buildCiFailureCell(failures?: PrNode['params']['ciFailures']): string {
+  if (!failures || failures.length === 0) {
+    return '<span class="cell-alert">原因不明（GitHub で確認）</span>';
+  }
+  return failures
+    .map((f) => {
+      const urlAttr = f.url ? ` data-url="${esc(f.url)}"` : '';
+      return `<span class="pr-ci-failure"${urlAttr}>🛑 ${esc(f.name)}</span>`;
+    })
+    .join('');
 }
 
 function formatApprovers(approved?: boolean, approvers?: string[]): string {

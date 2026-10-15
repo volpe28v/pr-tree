@@ -253,10 +253,10 @@ async function fetchAndRender(els: ReturnType<typeof getElements>): Promise<void
     applyFiltersAndBuildTree();
     notifyNewPrs(currentNodes);
 
-    // データ未変更ならレンダリングをスキップ
-    const fingerprint = currentNodes
-      .map((n) => `${n.params.number}:${n.params.updatedAt}:${n.params.status}:${n.params.mergeable}`)
-      .join('|');
+    // データ未変更ならレンダリングをスキップ。
+    // params は描画に使う値だけを持つ純粋なデータなので丸ごと比較する
+    // （一部キーだけだと、CI 失敗詳細やレビュアー内訳のように updatedAt が変わらず更新される項目を取り逃す）
+    const fingerprint = currentNodes.map((n) => JSON.stringify(n.params)).join('|');
     if (fingerprint !== lastRenderFingerprint) {
       lastRenderFingerprint = fingerprint;
       renderCurrentView(els);

@@ -20,6 +20,7 @@ export function buildPrNodes(
       title: pr.title,
       user: pr.user.login,
       reviewers: pr.requested_reviewers.map((r) => r.login),
+      assignees: (pr.assignees || []).map((a) => a.login),
       base: pr.base.ref,
       head: pr.head.ref,
       url: pr.html_url,
@@ -27,6 +28,7 @@ export function buildPrNodes(
       approved: pr.reviews.some((r) => r.state === 'APPROVED'),
       approvers: [...new Set(pr.reviews.filter((r) => r.state === 'APPROVED').map((r) => r.user.login))],
       changeRequesters: pr.changeRequesters,
+      commenters: pr.commenters,
       mergeable: pr.mergeable,
       files: pr.files.map((f) => ({ status: f.status, name: f.filename })),
       repoFullName,
@@ -36,6 +38,7 @@ export function buildPrNodes(
       lastCommenter: pr.lastCommenter,
       lastCommentedAt: pr.lastCommentedAt,
       changedFiles: pr.changedFiles,
+      ciFailures: pr.ciFailures,
     })
   );
 }
@@ -43,7 +46,11 @@ export function buildPrNodes(
 export function filterKeyword(prs: PrNode[], keyword?: string): PrNode[] {
   if (!keyword) return prs;
   return prs.filter((pr) => {
-    const users = [...(pr.params.reviewers || []), pr.params.user || ''];
+    const users = [
+      ...(pr.params.reviewers || []),
+      ...(pr.params.assignees || []),
+      pr.params.user || '',
+    ];
     return users.some((u) => u.includes(keyword));
   });
 }

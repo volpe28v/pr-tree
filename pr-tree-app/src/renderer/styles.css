@@ -352,6 +352,15 @@ body {
   font-size: 11px;
 }
 
+/* レビュー済みだが未承認のレビュアー数（詳細カードのレビュアー行） */
+.pr-reviewer-changes {
+  color: #ff8080;
+}
+
+.pr-reviewer-commented {
+  color: #e0a040;
+}
+
 .pr-draft-badge {
   background-color: #d29922;
   color: #000000;
@@ -525,6 +534,20 @@ body {
 .cell-alert {
   color: #ff8080;
   font-weight: bold;
+}
+
+/* CI 失敗チェック名（詳細カードのテーブル内）。data-url 付きはクリックで詳細ページを開く */
+.pr-ci-failure {
+  display: block;
+  color: #ff8080;
+}
+
+.pr-ci-failure[data-url] {
+  cursor: pointer;
+}
+
+.pr-ci-failure[data-url]:hover {
+  text-decoration: underline;
 }
 
 .cell-split {

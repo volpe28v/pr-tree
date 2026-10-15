@@ -1,10 +1,29 @@
 import {
+  CiCheck,
   GitHubPr,
   GitHubReview,
   GitHubFile,
+  GraphQLCiFailureResponse,
   GraphQLPrNode,
   GraphQLResponse,
+  GraphQLStatusCheckContext,
 } from './types';
+
+// bot は自動レビュー（devin / cursor / github-actions 等）として集計から除くが、
+// レビュー担当として扱いたい bot はここに列挙して人と同じ扱いにする
+const VISIBLE_BOTS = new Set(['higasshi-bot']);
+
+function isIgnoredBot(author: { __typename: string; login: string } | null): boolean {
+  return author !== null && author.__typename === 'Bot' && !VISIBLE_BOTS.has(author.login);
+}
+
+// 最終コメント者の候補として issue コメントを末尾から取る件数。bot（github-actions 等）を飛ばして人の最新を探すため 1 件では足りない
+// （レビュー側の候補は allReviews をそのまま使う）
+const LAST_COMMENT_CANDIDATES = 10;
+
+// 1 PR あたり取得するレビュー件数。承認 / request changes の判定は直近が重要なので last で取り、
+// 100 件を超える PR では古い側を切り捨てる
+const REVIEWS_PER_PR = 100;
 
 const PR_QUERY = `
 query($owner: String!, $repo: String!, $cursor: String) {
@@ -23,6 +42,9 @@ query($owner: String!, $repo: String!, $cursor: String) {
         reviewRequests(first: 20) {
           nodes { requestedReviewer { ... on User { login } } }
         }
+        assignees(first: 10) {
+          nodes { login }
+        }
         baseRefName headRefName headRefOid
         url updatedAt isDraft mergeable changedFiles
         commits(last: 1) {
@@ -34,25 +56,85 @@ query($owner: String!, $repo: String!, $cursor: String) {
             }
           }
         }
-        approvedReviews: reviews(first: 100, states: [APPROVED]) {
-          nodes { author { login } createdAt }
-        }
-        changesRequestedReviews: reviews(first: 100, states: [CHANGES_REQUESTED]) {
-          nodes { author { login } createdAt }
-        }
-        reviews(last: 1) {
+        allReviews: reviews(last: ${REVIEWS_PER_PR}) {
           totalCount
-          nodes { state author { login } createdAt }
+          nodes { state author { __typename login } createdAt }
         }
-        comments(last: 1) {
+        comments(last: ${LAST_COMMENT_CANDIDATES}) {
           totalCount
-          nodes { author { login } createdAt }
+          nodes { author { __typename login } createdAt }
         }
       }
     }
   }
 }
 `;
+
+// 失敗 PR ごとの check/status 一覧。一覧クエリに contexts を同居させると
+// open PR が多いリポジトリで GitHub 側が 504 を返すため、対象 PR を絞って別途取得する
+const CI_FAILURE_BATCH_SIZE = 10;
+const CI_CONTEXTS_PER_PR = 50;
+
+function buildCiFailureQuery(numbers: number[]): string {
+  const fields = numbers
+    .map(
+      (n) => `
+    pr${n}: pullRequest(number: ${n}) {
+      number
+      commits(last: 1) {
+        nodes {
+          commit {
+            statusCheckRollup {
+              contexts(first: ${CI_CONTEXTS_PER_PR}) {
+                nodes {
+                  __typename
+                  ... on CheckRun { name status conclusion detailsUrl }
+                  ... on StatusContext { context state targetUrl }
+                }
+              }
+            }
+          }
+        }
+      }
+    }`
+    )
+    .join('');
+  return `
+query($owner: String!, $repo: String!) {
+  repository(owner: $owner, name: $repo) {${fields}
+  }
+}
+`;
+}
+
+// CheckRun.conclusion のうち rollup を FAILURE にするもの
+// （NEUTRAL / SKIPPED / SUCCESS は赤の原因にならない）
+const CHECK_RUN_FAILURE_CONCLUSIONS = new Set([
+  'FAILURE',
+  'TIMED_OUT',
+  'CANCELLED',
+  'ACTION_REQUIRED',
+  'STARTUP_FAILURE',
+  'STALE',
+]);
+
+// 赤の原因になった check / status だけを抜き出す（PENDING や SUCCESS は含めない）
+function collectCiFailures(contexts: GraphQLStatusCheckContext[]): CiCheck[] {
+  const failures: CiCheck[] = [];
+  for (const ctx of contexts) {
+    if (ctx.__typename === 'CheckRun') {
+      if (CHECK_RUN_FAILURE_CONCLUSIONS.has((ctx.conclusion ?? '').toUpperCase())) {
+        failures.push({ name: ctx.name, url: ctx.detailsUrl ?? undefined });
+      }
+    } else if (ctx.__typename === 'StatusContext') {
+      const state = ctx.state.toUpperCase();
+      if (state === 'FAILURE' || state === 'ERROR') {
+        failures.push({ name: ctx.context, url: ctx.targetUrl ?? undefined });
+      }
+    }
+  }
+  return failures;
+}
 
 export interface RateLimitInfo {
   cost: number;
@@ -103,12 +185,53 @@ export class GitHubClient {
 
     const transformed = allNodes.map((node) => this.transformPr(node));
 
-    if (!username) return transformed;
+    const visible = username
+      ? transformed.filter(
+          (pr) =>
+            pr.user.login === username ||
+            pr.requested_reviewers.some((r) => r.login === username) ||
+            (pr.assignees || []).some((a) => a.login === username)
+        )
+      : transformed;
 
-    return transformed.filter(
-      (pr) =>
-        pr.user.login === username ||
-        pr.requested_reviewers.some((r) => r.login === username)
+    await this.attachCiFailures(visible);
+    return visible;
+  }
+
+  // 赤の PR にだけ失敗チェック一覧を付ける。取得に失敗しても一覧表示は壊さない
+  // （ciFailures が undefined のままなら描画側が「取得できず」と出す）
+  private async attachCiFailures(prs: (GitHubPr & { status: string })[]): Promise<void> {
+    const failed = prs.filter((pr) => pr.status === 'failure');
+    if (failed.length === 0) return;
+
+    const batches: GitHubPr[][] = [];
+    for (let i = 0; i < failed.length; i += CI_FAILURE_BATCH_SIZE) {
+      batches.push(failed.slice(i, i + CI_FAILURE_BATCH_SIZE));
+    }
+
+    await Promise.all(
+      batches.map(async (batch) => {
+        try {
+          const data = await this.graphql<GraphQLCiFailureResponse>(
+            buildCiFailureQuery(batch.map((pr) => pr.number)),
+            { owner: this.owner, repo: this.repo }
+          );
+          for (const pr of batch) {
+            const node = data.repository[`pr${pr.number}`];
+            if (!node) continue;
+            pr.ciFailures = collectCiFailures(
+              node.commits.nodes[0]?.commit?.statusCheckRollup?.contexts?.nodes ?? []
+            );
+          }
+        } catch (e) {
+          console.warn(
+            `CI failure details unavailable for ${this.owner}/${this.repo} #${batch
+              .map((pr) => pr.number)
+              .join(',#')}:`,
+            e
+          );
+        }
+      })
     );
   }
 
@@ -152,45 +275,51 @@ export class GitHubClient {
       UNKNOWN: null,
     };
 
-    // 未解消の request changes を出したレビュアーを算出。
-    // CHANGES_REQUESTED の後に同じ人が APPROVED していれば解消済み。
-    // dismiss されたレビューは state が DISMISSED に変わるためクエリの絞り込みで自然に除外される。
+    // レビューを人ごとに集計する。
+    // - 未解消の request changes: CHANGES_REQUESTED の後に同じ人が APPROVED していれば解消済み。
+    //   dismiss されたレビューは state が DISMISSED に変わるため CHANGES_REQUESTED 判定から自然に外れる。
+    // - コメントのみ: レビューは出したが承認も request changes もしていない人
+    //   （GitHub の Reviewers 欄で吹き出しアイコンになる人。dismiss された承認者もここに落ちる）。
+    //   PR 作者自身のコメントレビューはレビュアーではないので除く。
+    //   bot（devin / cursor 等の自動レビュー）は全 PR に付くため人数と工程判定から除く
+    //   （VISIBLE_BOTS に挙げた bot は除かない）。
+    const authorLogin = gqlPr.author?.login;
+    const approvedReviews = gqlPr.allReviews.nodes.filter(
+      (r) => r.state === 'APPROVED' && r.author !== null
+    );
     const lastApprovedAt = new Map<string, string>();
-    for (const r of gqlPr.approvedReviews.nodes) {
-      if (!r.author) continue;
-      const prev = lastApprovedAt.get(r.author.login);
-      if (!prev || r.createdAt > prev) lastApprovedAt.set(r.author.login, r.createdAt);
+    for (const r of approvedReviews) {
+      const prev = lastApprovedAt.get(r.author!.login);
+      if (!prev || r.createdAt > prev) lastApprovedAt.set(r.author!.login, r.createdAt);
     }
     const changeRequesters = new Set<string>();
-    for (const r of gqlPr.changesRequestedReviews.nodes) {
-      if (!r.author) continue;
+    for (const r of gqlPr.allReviews.nodes) {
+      if (r.state !== 'CHANGES_REQUESTED' || !r.author) continue;
       const approvedAt = lastApprovedAt.get(r.author.login);
       if (!approvedAt || r.createdAt > approvedAt) changeRequesters.add(r.author.login);
     }
+    const commenters = new Set<string>();
+    for (const r of gqlPr.allReviews.nodes) {
+      const login = r.author?.login;
+      if (!login || login === authorLogin || isIgnoredBot(r.author)) continue;
+      if (lastApprovedAt.has(login) || changeRequesters.has(login)) continue;
+      commenters.add(login);
+    }
 
-    // コメント総数（reviews + comments）と最終コメント者を算出
+    // コメント総数（reviews + comments）と最終コメント者を算出。
+    // 最終コメント者は bot（github-actions / devin 等）を除いた人の最新（VISIBLE_BOTS は人と同じ扱い）。
+    // 候補はレビュー末尾 REVIEWS_PER_PR 件と issue コメント末尾 LAST_COMMENT_CANDIDATES 件。
+    // どちらも全部 bot なら「最終コメントなし」扱いになる
     const commentCount =
-      gqlPr.reviews.totalCount + gqlPr.comments.totalCount;
-    const lastReview = gqlPr.reviews.nodes.length > 0
-      ? gqlPr.reviews.nodes[gqlPr.reviews.nodes.length - 1]
-      : null;
-    const lastComment = gqlPr.comments.nodes[0] ?? null;
+      gqlPr.allReviews.totalCount + gqlPr.comments.totalCount;
     let lastCommenter: string | undefined;
     let lastCommentedAt: string | undefined;
-    if (lastReview && lastComment) {
-      if (lastReview.createdAt >= lastComment.createdAt) {
-        lastCommenter = lastReview.author?.login;
-        lastCommentedAt = lastReview.createdAt;
-      } else {
-        lastCommenter = lastComment.author?.login;
-        lastCommentedAt = lastComment.createdAt;
+    for (const c of [...gqlPr.allReviews.nodes, ...gqlPr.comments.nodes]) {
+      if (!c.author || isIgnoredBot(c.author)) continue;
+      if (!lastCommentedAt || c.createdAt > lastCommentedAt) {
+        lastCommenter = c.author.login;
+        lastCommentedAt = c.createdAt;
       }
-    } else if (lastReview) {
-      lastCommenter = lastReview.author?.login;
-      lastCommentedAt = lastReview.createdAt;
-    } else if (lastComment) {
-      lastCommenter = lastComment.author?.login;
-      lastCommentedAt = lastComment.createdAt;
     }
 
     return {
@@ -200,6 +329,7 @@ export class GitHubClient {
       requested_reviewers: gqlPr.reviewRequests.nodes
         .filter((n) => n.requestedReviewer !== null)
         .map((n) => ({ login: n.requestedReviewer!.login })),
+      assignees: gqlPr.assignees.nodes.map((n) => ({ login: n.login })),
       base: { ref: gqlPr.baseRefName },
       head: { ref: gqlPr.headRefName, sha: gqlPr.headRefOid },
       html_url: gqlPr.url,
@@ -207,11 +337,13 @@ export class GitHubClient {
       draft: gqlPr.isDraft,
       status: this.computeStatus(gqlPr),
       files: [],
-      reviews: gqlPr.approvedReviews.nodes
-        .filter((r) => r.author !== null)
-        .map((r) => ({ state: 'APPROVED', user: { login: r.author!.login } })),
+      reviews: approvedReviews.map((r) => ({
+        state: 'APPROVED',
+        user: { login: r.author!.login },
+      })),
       mergeable: mergeableMap[gqlPr.mergeable] ?? null,
       changeRequesters: [...changeRequesters],
+      commenters: [...commenters],
       commentCount,
       lastCommenter,
       lastCommentedAt,
