@@ -10,7 +10,15 @@ const HIDE_APPROVED_KEY = 'pr-tree-hide-approved';
 
 type ViewMode = 'card' | 'compact' | 'tree';
 
-let pollingTimer: ReturnType<typeof setInterval> | null = null;
+let pollingTimer: ReturnType<typeof setTimeout> | null = null;
+let pollingIntervalSec = 60;
+// startPolling のたびに増やす世代番号。取得待ちの最中に startPolling され直した古い連鎖が
+// 完了後に次を予約してポーリングが 2 本になるのを防ぐ
+let pollingGeneration = 0;
+// 取得の多重実行ガード。進行中に再度呼ばれたら pendingRefetch を立てて、完了後に 1 回だけ再実行する
+// （setInterval で積み重なった要求が古い応答で新しい描画を上書きするのを防ぐ）
+let inFlight = false;
+let pendingRefetch = false;
 let clients: { client: GitHubClient; repoFullName: string }[] = [];
 let currentConfig: AppConfig | null = null;
 let currentTree: PrNode[] = [];
@@ -232,24 +240,64 @@ function notifyNewPrs(filteredNodes: PrNode[]): void {
 }
 
 async function fetchAndRender(els: ReturnType<typeof getElements>): Promise<void> {
-  if (clients.length === 0) return;
+  if (inFlight) {
+    pendingRefetch = true;
+    return;
+  }
+  inFlight = true;
+  try {
+    do {
+      pendingRefetch = false;
+      await fetchOnce(els);
+    } while (pendingRefetch);
+  } finally {
+    inFlight = false;
+  }
+}
+
+async function fetchOnce(els: ReturnType<typeof getElements>): Promise<void> {
+  // 開始時点の clients を覚えておき、取得中に設定が保存されて差し替わっていたら応答を捨てる
+  // （pendingRefetch が立っているので新しい clients で取り直される）
+  const runClients = clients;
+  if (runClients.length === 0) return;
 
   els.lastUpdated.textContent = 'Loading...';
 
   try {
     // API 呼び出しカウントをリセット
-    for (const c of clients) c.client.apiCallCount = 0;
+    for (const c of runClients) c.client.apiCallCount = 0;
 
-    const results = await Promise.all(
-      clients.map(async ({ client, repoFullName }) => {
+    // リポジトリ単位で成否を分け、1 つの失敗で他の成功分まで捨てない
+    const settled = await Promise.allSettled(
+      runClients.map(async ({ client, repoFullName }) => {
         const prs = await client.pullRequests(currentConfig?.username);
         return buildPrNodes(prs as never[], repoFullName);
       })
     );
+    if (runClients !== clients) return;
 
-    const totalApiCalls = clients.reduce((sum, c) => sum + c.client.apiCallCount, 0);
+    const fetched: PrNode[] = [];
+    const failedRepos: string[] = [];
+    settled.forEach((r, i) => {
+      if (r.status === 'fulfilled') {
+        fetched.push(...r.value);
+      } else {
+        failedRepos.push(runClients[i].repoFullName);
+        console.warn(`Fetch failed for ${runClients[i].repoFullName}:`, r.reason);
+      }
+    });
+    if (failedRepos.length === runClients.length) {
+      throw settled.find((r): r is PromiseRejectedResult => r.status === 'rejected')!.reason;
+    }
 
-    lastFetchedNodes = results.flat();
+    const totalApiCalls = runClients.reduce((sum, c) => sum + c.client.apiCallCount, 0);
+
+    // 失敗したリポジトリは前回の取得結果をそのまま残す（消えて再出現するちらつきと誤った新着通知を防ぐ）
+    const failedSet = new Set(failedRepos);
+    lastFetchedNodes = [
+      ...fetched,
+      ...lastFetchedNodes.filter((n) => n.params.repoFullName && failedSet.has(n.params.repoFullName)),
+    ];
     applyFiltersAndBuildTree();
     notifyNewPrs(currentNodes);
 
@@ -261,11 +309,12 @@ async function fetchAndRender(els: ReturnType<typeof getElements>): Promise<void
       lastRenderFingerprint = fingerprint;
       renderCurrentView(els);
     }
-    const lastRateLimit = clients.map((c) => c.client.rateLimitInfo).find((r) => r !== null);
+    const lastRateLimit = runClients.map((c) => c.client.rateLimitInfo).find((r) => r !== null);
     const rateLimitText = lastRateLimit
       ? `  Cost: ${lastRateLimit.cost}  Remaining: ${lastRateLimit.remaining}/${lastRateLimit.limit}`
       : '';
-    els.lastUpdated.textContent = `Updated: ${new Date().toLocaleTimeString()}  (API: ${totalApiCalls}${rateLimitText})`;
+    const failedText = failedRepos.length > 0 ? `  ⚠️ Failed: ${failedRepos.join(', ')}` : '';
+    els.lastUpdated.textContent = `Updated: ${new Date().toLocaleTimeString()}  (API: ${totalApiCalls}${rateLimitText})${failedText}`;
   } catch (err) {
     els.lastUpdated.textContent = `⚠️ Error: ${new Date().toLocaleTimeString()} - ${err}`;
     lastRenderFingerprint = '';
@@ -323,10 +372,21 @@ function setupTooltip(root: HTMLElement): void {
   });
 }
 
+// 前回の取得が完了してから intervalSec 後に次を予約する。
+// setInterval だと取得が間隔より長引いたときに要求が積み重なるため、完了駆動で 1 本に保つ
 function startPolling(els: ReturnType<typeof getElements>, intervalSec: number): void {
-  if (pollingTimer) clearInterval(pollingTimer);
-  const safeSec = Math.max(intervalSec, 30);
-  pollingTimer = setInterval(() => fetchAndRender(els), safeSec * 1000);
+  if (pollingTimer) clearTimeout(pollingTimer);
+  pollingIntervalSec = Math.max(intervalSec, 30);
+  pollingGeneration++;
+  scheduleNextPoll(els, pollingGeneration);
+}
+
+function scheduleNextPoll(els: ReturnType<typeof getElements>, generation: number): void {
+  pollingTimer = setTimeout(async () => {
+    await fetchAndRender(els);
+    if (generation !== pollingGeneration) return;
+    scheduleNextPoll(els, generation);
+  }, pollingIntervalSec * 1000);
 }
 
 function init(): void {

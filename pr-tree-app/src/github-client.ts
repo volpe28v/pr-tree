@@ -136,6 +136,25 @@ function collectCiFailures(contexts: GraphQLStatusCheckContext[]): CiCheck[] {
   return failures;
 }
 
+// 1 リクエストの上限時間。超えたら中断して次のポーリングに任せる
+// （無期限に待つと Promise.all ごと固まり、表示が Loading... のまま止まる）
+const REQUEST_TIMEOUT_MS = 30_000;
+
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (e) {
+    if (e instanceof Error && e.name === 'AbortError') {
+      throw new Error(`Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s: ${url}`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export interface RateLimitInfo {
   cost: number;
   remaining: number;
@@ -163,7 +182,7 @@ export class GitHubClient {
       Accept: 'application/vnd.github.v3+json',
     };
     try {
-      const res = await fetch(url, { headers });
+      const res = await fetchWithTimeout(url, { headers });
       return res.ok;
     } catch {
       return false;
@@ -372,7 +391,7 @@ export class GitHubClient {
     variables: Record<string, unknown>
   ): Promise<T> {
     this.apiCallCount++;
-    const res = await fetch('https://api.github.com/graphql', {
+    const res = await fetchWithTimeout('https://api.github.com/graphql', {
       method: 'POST',
       headers: {
         Authorization: `bearer ${this.token}`,
