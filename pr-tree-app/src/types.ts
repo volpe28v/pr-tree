@@ -82,6 +82,7 @@ export type GraphQLStatusCheckContext =
       status: string;
       conclusion: string | null;
       detailsUrl: string | null;
+      startedAt: string | null;
     }
   | {
       __typename: 'StatusContext';

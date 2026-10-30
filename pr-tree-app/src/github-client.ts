@@ -73,7 +73,8 @@ query($owner: String!, $repo: String!, $cursor: String) {
 // 失敗 PR ごとの check/status 一覧。一覧クエリに contexts を同居させると
 // open PR が多いリポジトリで GitHub 側が 504 を返すため、対象 PR を絞って別途取得する
 const CI_FAILURE_BATCH_SIZE = 10;
-const CI_CONTEXTS_PER_PR = 50;
+// 同じコミットで同名チェックが再実行されると古い実行分も返るため、上限いっぱいまで取る
+const CI_CONTEXTS_PER_PR = 100;
 
 function buildCiFailureQuery(numbers: number[]): string {
   const fields = numbers
@@ -88,7 +89,7 @@ function buildCiFailureQuery(numbers: number[]): string {
               contexts(first: ${CI_CONTEXTS_PER_PR}) {
                 nodes {
                   __typename
-                  ... on CheckRun { name status conclusion detailsUrl }
+                  ... on CheckRun { name status conclusion detailsUrl startedAt }
                   ... on StatusContext { context state targetUrl }
                 }
               }
@@ -118,14 +119,18 @@ const CHECK_RUN_FAILURE_CONCLUSIONS = new Set([
   'STALE',
 ]);
 
+type GraphQLCheckRun = Extract<GraphQLStatusCheckContext, { __typename: 'CheckRun' }>;
+
 // 赤の原因になった check / status だけを抜き出す（PENDING や SUCCESS は含めない）
+// CheckRun は PR の編集などで同じコミットのまま再実行されると古い実行分も残るので、
+// 名前ごとに最新の 1 件だけを見る（未開始 = startedAt なしはキュー中の最新扱い）
 function collectCiFailures(contexts: GraphQLStatusCheckContext[]): CiCheck[] {
+  const latestRuns = new Map<string, GraphQLCheckRun>();
   const failures: CiCheck[] = [];
   for (const ctx of contexts) {
     if (ctx.__typename === 'CheckRun') {
-      if (CHECK_RUN_FAILURE_CONCLUSIONS.has((ctx.conclusion ?? '').toUpperCase())) {
-        failures.push({ name: ctx.name, url: ctx.detailsUrl ?? undefined });
-      }
+      const prev = latestRuns.get(ctx.name);
+      if (!prev || startedAtMs(ctx) >= startedAtMs(prev)) latestRuns.set(ctx.name, ctx);
     } else if (ctx.__typename === 'StatusContext') {
       const state = ctx.state.toUpperCase();
       if (state === 'FAILURE' || state === 'ERROR') {
@@ -133,7 +138,16 @@ function collectCiFailures(contexts: GraphQLStatusCheckContext[]): CiCheck[] {
       }
     }
   }
+  for (const run of latestRuns.values()) {
+    if (CHECK_RUN_FAILURE_CONCLUSIONS.has((run.conclusion ?? '').toUpperCase())) {
+      failures.push({ name: run.name, url: run.detailsUrl ?? undefined });
+    }
+  }
   return failures;
+}
+
+function startedAtMs(run: GraphQLCheckRun): number {
+  return run.startedAt ? Date.parse(run.startedAt) : Number.POSITIVE_INFINITY;
 }
 
 // 1 リクエストの上限時間。超えたら中断して次のポーリングに任せる
