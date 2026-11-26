@@ -1,6 +1,6 @@
 # pr-tree
 
-GitHub Pull Request をツリー表示するツール。CLI 版とデスクトップアプリ版（Electron）の2種類があります。
+GitHub Pull Request をツリー表示する macOS 向けデスクトップアプリ（Electron）。
 
 ## Desktop App (Electron)
 
@@ -64,49 +64,3 @@ npm run package
 ```
 
 `npm run package` を実行すると `/Applications/PRTree.app` が生成され、Launchpad や Spotlight から起動できます。
-
----
-
-## CLI Version
-
-コマンドラインで PR をツリー表示します。
-
-### セットアップ
-
-- GitHub Personal Access Token（`repo` スコープ）を取得
-  - https://github.com/settings/tokens
-- 環境変数に追加
-  ```bash
-  export GITHUB_API_TOKEN=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-  ```
-- `bundle install` を実行
-- スクリプトを実行可能なパスに配置
-  ```bash
-  ln -s /path/to/pr-tree/bin/pr-tree /usr/local/bin/pr-tree
-  ```
-
-### 使い方
-
-```bash
-# 基本実行
-$ pr-tree
-
-# ユーザーで絞り込み
-$ pr-tree -k username
-
-# レビュアーで絞り込み
-$ pr-tree -r username
-
-# リポジトリURL指定
-$ pr-tree -u ssh://git@github.com/owner/repo.git
-
-# Markdown 形式で出力
-$ pr-tree -m
-
-# 変更ファイル表示
-$ pr-tree -f
-```
-
-### 表示例
-
-![image](https://user-images.githubusercontent.com/754962/77252414-0cdea200-6c97-11ea-9ead-894bd9164ac9.png)
