@@ -10,10 +10,10 @@
     "package": "npm run build && npx electron-packager . PRTree --platform=darwin --arch=arm64 --out=release --overwrite && cp -r 'release/PRTree-darwin-arm64/PRTree.app' /Applications/"
   },
   "devDependencies": {
-    "@electron/packager": "^19.1.0",
+    "@electron/packager": "^20.3.0",
     "@types/node": "^22.0.0",
-    "electron": "^33.0.0",
-    "esbuild": "^0.24.0",
+    "electron": "^45.5.0",
+    "esbuild": "^0.28.2",
     "typescript": "^5.7.0"
   }
 }
