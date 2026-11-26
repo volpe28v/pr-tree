@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import { execFile } from 'child_process';
 
 // 600x500 のほぼ静的な常駐ウィンドウに GPU 合成は不要。GPU プロセスのメモリを抑えるため
 // ソフトウェア描画にする（app の ready 前に呼ぶ必要がある）
@@ -98,6 +99,26 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (mainWindow === null) createWindow();
 });
+
+// gh CLI がログイン済みならそのトークンを返す。未インストール / 未ログイン / タイムアウトは null。
+// Finder や Dock から起動したアプリの PATH には Homebrew のディレクトリが入らないので補う
+const GH_EXTRA_PATHS = ['/opt/homebrew/bin', '/usr/local/bin'];
+const GH_TOKEN_TIMEOUT_MS = 5000;
+
+function getGhToken(): Promise<string | null> {
+  const env = {
+    ...process.env,
+    PATH: [process.env.PATH, ...GH_EXTRA_PATHS].filter(Boolean).join(path.delimiter),
+  };
+  return new Promise((resolve) => {
+    execFile('gh', ['auth', 'token'], { env, timeout: GH_TOKEN_TIMEOUT_MS }, (err, stdout) => {
+      const token = err ? '' : stdout.trim();
+      resolve(token || null);
+    });
+  });
+}
+
+ipcMain.handle('get-gh-token', () => getGhToken());
 
 // リンクをブラウザで開く
 ipcMain.on('open-external', (_event, url: string) => {

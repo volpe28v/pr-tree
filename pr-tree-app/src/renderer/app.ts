@@ -30,6 +30,22 @@ let hideApproved = false;
 let lastFetchedNodes: PrNode[] = [];
 let knownPrNumbers: Set<number> = new Set();
 let lastRenderFingerprint = '';
+// gh CLI から取得したトークン。Token 欄が空のときに使う。localStorage には保存しない
+let ghToken = '';
+
+async function refreshGhToken(): Promise<void> {
+  try {
+    ghToken = (await window.electronAPI.getGhToken()) ?? '';
+  } catch (e) {
+    console.warn('[pr-tree] gh token unavailable:', e);
+    ghToken = '';
+  }
+}
+
+// Token 欄に入力があればそれを優先し、空なら gh CLI のトークンを使う
+function effectiveToken(inputToken: string): string {
+  return inputToken || ghToken;
+}
 
 function loadConfig(): AppConfig | null {
   const raw = localStorage.getItem(CONFIG_KEY);
@@ -60,8 +76,10 @@ function saveViewMode(mode: ViewMode): void {
 }
 
 function buildClients(config: AppConfig): typeof clients {
+  const token = effectiveToken(config.token);
+  if (!token) return [];
   return config.repos.map((r) => ({
-    client: new GitHubClient(config.token, r.owner, r.repo),
+    client: new GitHubClient(token, r.owner, r.repo),
     repoFullName: `${r.owner}/${r.repo}`,
   }));
 }
@@ -110,7 +128,7 @@ function renderReposList(els: ReturnType<typeof getElements>): void {
     els.reposList.appendChild(item);
 
     // 疎通チェック
-    const token = els.tokenInput.value.trim();
+    const token = effectiveToken(els.tokenInput.value.trim());
     if (token) {
       const client = new GitHubClient(token, r.owner, r.repo);
       client.checkConnection().then((ok) => {
@@ -389,9 +407,17 @@ function scheduleNextPoll(els: ReturnType<typeof getElements>, generation: numbe
   }, pollingIntervalSec * 1000);
 }
 
-function init(): void {
+function updateTokenPlaceholder(els: ReturnType<typeof getElements>): void {
+  els.tokenInput.placeholder = ghToken
+    ? 'empty = use gh CLI auth'
+    : 'ghp_... (gh CLI auth not available)';
+}
+
+async function init(): Promise<void> {
   const els = getElements();
   const config = loadConfig();
+  await refreshGhToken();
+  updateTokenPlaceholder(els);
   viewMode = loadViewMode();
   hideApproved = localStorage.getItem(HIDE_APPROVED_KEY) === 'true';
   updateViewButtons(els);
@@ -463,17 +489,22 @@ function init(): void {
   });
 
   // 設定保存
-  els.saveSettingsBtn.addEventListener('click', () => {
+  els.saveSettingsBtn.addEventListener('click', async () => {
     // 入力欄に値が残っていたら自動追加
     addRepo();
 
     const token = els.tokenInput.value.trim();
+    // 起動後に gh auth login した場合に備えて取り直す
+    if (!token) {
+      await refreshGhToken();
+      updateTokenPlaceholder(els);
+    }
     const username = els.usernameInput.value.trim() || undefined;
     const excludeKeywords = els.excludeKeywordsInput.value.trim() || undefined;
     const interval = parseInt(els.intervalInput.value, 10) || 60;
 
-    if (!token || settingsRepos.length === 0) {
-      alert('Token and at least one repository are required');
+    if (!effectiveToken(token) || settingsRepos.length === 0) {
+      alert('A token (or gh CLI login) and at least one repository are required');
       return;
     }
 
@@ -555,7 +586,7 @@ function init(): void {
   } else {
     els.settingsPanel.classList.remove('hidden');
     els.treeContainer.innerHTML =
-      '<div class="loading">Configure token and repositories to get started.</div>';
+      '<div class="loading">Run `gh auth login` or set a token, and add repositories to get started.</div>';
   }
 }
 
@@ -657,6 +688,7 @@ declare global {
   interface Window {
     electronAPI: {
       openExternal: (url: string) => void;
+      getGhToken: () => Promise<string | null>;
       copyToClipboard: (text: string) => void;
     };
   }
