@@ -80,7 +80,7 @@ export function renderGrouped(
     renderSection(container, '📝 My PRs', myPrs, trees, nonTrivialSet, username, onShowTree, selectedNumber, false);
   }
   if (reviewPrs.length > 0) {
-    renderSection(container, '👀 Review Requested', reviewPrs, trees, nonTrivialSet, username, onShowTree, selectedNumber, true);
+    renderSection(container, '👀 Review Requested', reviewPrs, trees, nonTrivialSet, username, onShowTree, selectedNumber, true, true);
   }
   if (myPrs.length === 0 && reviewPrs.length === 0) {
     const empty = document.createElement('div');
@@ -121,7 +121,7 @@ export function renderCompact(
     renderCompactSection(container, '📝 My PRs', myPrs, trees, nonTrivialSet, username, onShowTree, selectedNumber);
   }
   if (reviewPrs.length > 0) {
-    renderCompactSection(container, '👀 Review Requested', reviewPrs, trees, nonTrivialSet, username, onShowTree, selectedNumber);
+    renderCompactSection(container, '👀 Review Requested', reviewPrs, trees, nonTrivialSet, username, onShowTree, selectedNumber, true);
   }
   if (myPrs.length === 0 && reviewPrs.length === 0) {
     const empty = document.createElement('div');
@@ -268,14 +268,12 @@ function renderSection(
   username: string,
   onShowTree?: (rootNode: PrNode, highlightNumber: number) => void,
   selectedNumber?: number | null,
-  defaultCollapsed = false
+  defaultCollapsed = false,
+  copyable = false
 ): void {
-  const header = document.createElement('div');
-  header.className = 'section-header';
-  header.textContent = title;
-  container.appendChild(header);
-
   const groups = groupByRepo(prs);
+  appendSectionHeader(container, title, copyable ? joinPrUrls([...groups.values()].flat()) : '');
+
   for (const [repo, repoPrs] of groups) {
     if (repoPrs.length === 0) continue;
     appendRepoSeparator(container, repo);
@@ -285,6 +283,30 @@ function renderSection(
   }
 
   addSpacer(container);
+}
+
+// 表示順（リポジトリごとのグループ順）に並んだ PR の URL を改行区切りで連結する。URL の無い PR は飛ばす
+export function joinPrUrls(prs: PrNode[]): string {
+  return prs
+    .map((n) => n.params.url || '')
+    .filter((url) => url.length > 0)
+    .join('\n');
+}
+
+// セクション見出し。copyUrls があれば一括コピーボタンを添え、クリック処理は app.ts のコンテナ委譲で拾う
+function appendSectionHeader(container: HTMLElement, title: string, copyUrls: string): void {
+  const header = document.createElement('div');
+  header.className = 'section-header';
+  header.textContent = title;
+  if (copyUrls) {
+    const btn = document.createElement('button');
+    btn.className = 'section-copy-btn';
+    btn.textContent = '📋';
+    btn.dataset.tooltip = 'Copy all URLs in this section';
+    btn.dataset.copyUrls = copyUrls;
+    header.appendChild(btn);
+  }
+  container.appendChild(header);
 }
 
 function renderPrCard(
@@ -443,14 +465,12 @@ function renderCompactSection(
   nonTrivialSet: Set<number>,
   username: string,
   onShowTree?: (rootNode: PrNode, highlightNumber: number) => void,
-  selectedNumber?: number | null
+  selectedNumber?: number | null,
+  copyable = false
 ): void {
-  const header = document.createElement('div');
-  header.className = 'section-header';
-  header.textContent = title;
-  container.appendChild(header);
-
   const groups = groupByRepo(prs);
+  appendSectionHeader(container, title, copyable ? joinPrUrls([...groups.values()].flat()) : '');
+
   for (const [repo, repoPrs] of groups) {
     if (repoPrs.length === 0) continue;
     appendRepoSeparator(container, repo);

@@ -578,7 +578,7 @@ async function init(): Promise<void> {
   // クリックでブラウザを開く（data-url を持つ要素、または親要素）
   const handleUrlClick = (e: Event) => {
     const target = e.target as HTMLElement;
-    if (target.closest('.tree-badge')) return;
+    if (target.closest('.tree-badge, .section-copy-btn')) return;
     const clickable = target.closest('[data-url]') as HTMLElement | null;
     if (clickable?.dataset.url) {
       e.preventDefault();
@@ -587,6 +587,16 @@ async function init(): Promise<void> {
   };
   els.treeContainer.addEventListener('click', handleUrlClick);
   els.treeDetailContent.addEventListener('click', handleUrlClick);
+
+  // セクション見出しの 📋 で、そのセクションに表示中の PR の URL を改行区切りで一括コピー
+  els.treeContainer.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('.section-copy-btn') as HTMLElement | null;
+    const urls = btn?.dataset.copyUrls;
+    if (!urls) return;
+    e.preventDefault();
+    const count = urls.split('\n').length;
+    copyToClipboard(urls, `${count} URL${count === 1 ? '' : 's'} copied`);
+  });
 
   // 右クリックでメニューを表示し、「Copy URL」で PR の URL をコピー（codino/regista へのレビュー依頼用）
   const handleUrlContextMenu = (e: Event) => {
