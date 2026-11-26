@@ -360,8 +360,7 @@ export class GitHubClient {
       title: gqlPr.title,
       user: { login: gqlPr.author?.login ?? '' },
       requested_reviewers: gqlPr.reviewRequests.nodes
-        .filter((n) => n.requestedReviewer !== null)
-        .map((n) => ({ login: n.requestedReviewer!.login })),
+        .flatMap((n) => (n.requestedReviewer?.login ? [{ login: n.requestedReviewer.login }] : [])),
       assignees: gqlPr.assignees.nodes.map((n) => ({ login: n.login })),
       base: { ref: gqlPr.baseRefName },
       head: { ref: gqlPr.headRefName, sha: gqlPr.headRefOid },

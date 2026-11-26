@@ -96,7 +96,8 @@ export interface GraphQLPrNode {
   title: string;
   author: { login: string } | null;
   reviewRequests: {
-    nodes: { requestedReviewer: { login: string } | null }[];
+    // クエリは User の login しか取らないため、Team / Bot 宛ての依頼は login を持たない空オブジェクトになる
+    nodes: { requestedReviewer: { login?: string } | null }[];
   };
   assignees: {
     nodes: { login: string }[];
