@@ -307,6 +307,24 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
 }
 
+/* セクション見出し横の URL 一括コピーボタン（ヘッダーのボタンと同じ見た目を小さくしたもの） */
+.section-copy-btn {
+  background: none;
+  border: 1px solid #555;
+  color: #ccc;
+  border-radius: 3px;
+  padding: 0 5px;
+  margin-left: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 16px;
+  vertical-align: middle;
+}
+
+.section-copy-btn:hover {
+  background: #3c3c3c;
+}
+
 .repo-separator {
   font-size: 11px;
   color: #888;
