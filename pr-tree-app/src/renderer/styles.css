@@ -54,6 +54,22 @@ body {
   background: #3c3c3c;
 }
 
+#search-input {
+  width: 56px;
+  background: #1e1e1e;
+  border: 1px solid #555;
+  color: #d4d4d4;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  user-select: text;
+}
+
+#search-input:focus {
+  outline: none;
+  border-color: #0e639c;
+}
+
 #view-toggle {
   display: flex;
   gap: 0;

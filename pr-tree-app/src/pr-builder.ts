@@ -55,6 +55,22 @@ export function filterKeyword(prs: PrNode[], keyword?: string): PrNode[] {
   });
 }
 
+// 検索クエリを照合用に正規化する（前後の空白と先頭の # を除去し、小文字化）
+export function normalizeSearchQuery(query?: string): string {
+  return (query || '').trim().replace(/^#/, '').trim().toLowerCase();
+}
+
+// PR 番号・head ブランチ名・タイトルのいずれかにクエリが部分一致する PR に絞り込む（大文字小文字は無視）
+export function filterSearchQuery(prs: PrNode[], query?: string): PrNode[] {
+  const q = normalizeSearchQuery(query);
+  if (!q) return prs;
+  return prs.filter((pr) =>
+    [pr.params.number != null ? String(pr.params.number) : '', pr.params.head || '', pr.params.title || ''].some(
+      (s) => s.toLowerCase().includes(q)
+    )
+  );
+}
+
 export function filterReviewer(prs: PrNode[], reviewer?: string): PrNode[] {
   if (!reviewer) return prs;
   return prs.filter((pr) =>
