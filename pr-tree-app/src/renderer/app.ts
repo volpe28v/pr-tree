@@ -1,5 +1,5 @@
 import { GitHubClient, RateLimitInfo } from '../github-client';
-import { buildPrNodes, filterKeyword, filterCiPass, filterNoApproved, PrNode } from '../pr-builder';
+import { buildPrNodes, filterKeyword, filterCiPass, filterNoApproved, filterSearchQuery, normalizeSearchQuery, PrNode } from '../pr-builder';
 import { buildTree } from '../tree-builder';
 import { renderTree, renderGrouped, renderCompact, renderSubTree, findTreeRoot, extractRelatedSubtree, setCollapsed } from './tree-view';
 import { AppConfig, RepoEntry } from '../types';
@@ -30,6 +30,8 @@ let hideApproved = false;
 let lastFetchedNodes: PrNode[] = [];
 let knownPrNumbers: Set<number> = new Set();
 let lastRenderFingerprint = '';
+// ヘッダーの検索欄の入力値。永続化しない（ポーリング更新後も入力中のクエリで絞り込み続ける）
+let searchQuery = '';
 // gh CLI から取得したトークン。Token 欄が空のときに使う。localStorage には保存しない
 let ghToken = '';
 
@@ -105,6 +107,7 @@ function getElements() {
     viewCompactBtn: document.getElementById('view-compact-btn')!,
     viewTreeBtn: document.getElementById('view-tree-btn')!,
     hideApprovedBtn: document.getElementById('hide-approved-btn')!,
+    searchInput: document.getElementById('search-input') as HTMLInputElement,
     treeDetailPanel: document.getElementById('tree-detail-panel')!,
     treeDetailTitle: document.getElementById('tree-detail-title')!,
     treeDetailContent: document.getElementById('tree-detail-content')!,
@@ -145,6 +148,18 @@ function repoNameText(_config: AppConfig): string {
 
 function renderCurrentView(els: ReturnType<typeof getElements>): void {
   if (currentTree.length === 0 && currentNodes.length === 0) return;
+
+  // 検索で 1 件も残らないときはその旨を表示する（詳細パネルも閉じる）
+  if (currentTree.length === 0 && normalizeSearchQuery(searchQuery)) {
+    selectedTreePrNumber = null;
+    els.treeDetailPanel.classList.add('hidden');
+    els.treeContainer.innerHTML = '';
+    const empty = document.createElement('div');
+    empty.className = 'loading';
+    empty.textContent = `No PRs match "${searchQuery.trim()}".`;
+    els.treeContainer.appendChild(empty);
+    return;
+  }
 
   const showTreeCallback = (rootNode: PrNode, highlightNumber: number) => {
     selectedTreePrNumber = highlightNumber;
@@ -224,8 +239,17 @@ function applyFiltersAndBuildTree(): void {
   nodes = filterCiPass(nodes, false);
   nodes = filterExcludeKeywords(nodes, currentConfig?.excludeKeywords);
   // hideApproved はカードの Review Requested セクションのみに適用するため、ここでは適用しない
+  // currentNodes は新着通知の判定に使うため、検索による絞り込みは含めない
   currentNodes = nodes;
-  currentTree = buildTree(nodes);
+  // 検索は他のフィルタと同様にツリー構築前に適用する（親が外れた子は base ブランチのトップに付く）
+  currentTree = buildTree(filterSearchQuery(nodes, searchQuery));
+}
+
+// 再描画スキップ判定用。表示はデータと検索クエリの両方で決まるため、両方を含める。
+// params は描画に使う値だけを持つ純粋なデータなので丸ごと比較する
+// （一部キーだけだと、CI 失敗詳細やレビュアー内訳のように updatedAt が変わらず更新される項目を取り逃す）
+function renderFingerprint(): string {
+  return normalizeSearchQuery(searchQuery) + '\n' + currentNodes.map((n) => JSON.stringify(n.params)).join('|');
 }
 
 function notifyNewPrs(filteredNodes: PrNode[]): void {
@@ -319,10 +343,8 @@ async function fetchOnce(els: ReturnType<typeof getElements>): Promise<void> {
     applyFiltersAndBuildTree();
     notifyNewPrs(currentNodes);
 
-    // データ未変更ならレンダリングをスキップ。
-    // params は描画に使う値だけを持つ純粋なデータなので丸ごと比較する
-    // （一部キーだけだと、CI 失敗詳細やレビュアー内訳のように updatedAt が変わらず更新される項目を取り逃す）
-    const fingerprint = currentNodes.map((n) => JSON.stringify(n.params)).join('|');
+    // データと検索クエリが未変更ならレンダリングをスキップ
+    const fingerprint = renderFingerprint();
     if (fingerprint !== lastRenderFingerprint) {
       lastRenderFingerprint = fingerprint;
       renderCurrentView(els);
@@ -481,6 +503,21 @@ async function init(): Promise<void> {
     updateViewButtons(els);
     applyFiltersAndBuildTree();
     renderCurrentView(els);
+  });
+
+  // 番号でのインクリメンタル検索（取得済みデータを絞り込むだけで、取得は発生させない）
+  const applySearch = () => {
+    searchQuery = els.searchInput.value;
+    applyFiltersAndBuildTree();
+    lastRenderFingerprint = renderFingerprint();
+    renderCurrentView(els);
+  };
+  els.searchInput.addEventListener('input', applySearch);
+  els.searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && els.searchInput.value !== '') {
+      els.searchInput.value = '';
+      applySearch();
+    }
   });
 
   // 設定パネルトグル
