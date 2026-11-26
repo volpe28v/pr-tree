@@ -24,7 +24,8 @@ npm start
 
 初回起動時に設定パネルが表示されます。
 
-1. **Token** - GitHub Personal Access Token（`repo` スコープ）を入力
+1. **Token** - 空欄のままなら `gh` CLI の認証（`gh auth login` 済みであること）を使用
+   - `gh` を使わない場合は GitHub Personal Access Token（`repo` スコープ）を入力
    - https://github.com/settings/tokens から発行
 2. **Repositories** - `owner/repo` 形式でリポジトリを追加（複数登録可）
 3. **Account** - 自分の GitHub ユーザー名を入力（My PRs / Review Requested の分類に使用）
